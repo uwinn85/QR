@@ -68,28 +68,19 @@
 <body>
     <div id="root"></div>
 
-    <!-- Firebase SDK (compat untuk mempertahankan format single-file HTML) -->
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <!-- Supabase: database dan realtime lintas HP, komputer kasir, dan admin -->
+    <script src="/supabase-config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      window.RESTO_FIREBASE_CONFIG = {
-        apiKey: "AIzaSyA__UJhXQLG3ZxGZf2eNclg206I0hA0-2o",
-        authDomain: "resto-qr-pro-dev.firebaseapp.com",
-        projectId: "resto-qr-pro-dev",
-        storageBucket: "resto-qr-pro-dev.firebasestorage.app",
-        messagingSenderId: "1040412280344",
-        appId: "1:1040412280344:web:e0b4e77556903731a8256d",
-        measurementId: "G-WQ4C1HV547"
-      };
       try {
-        if (!firebase.apps.length) firebase.initializeApp(window.RESTO_FIREBASE_CONFIG);
-        window.restoAuth = firebase.auth();
-        window.restoDb = firebase.firestore();
-        window.restoFirebaseReady = true;
+        const config = window.RESTO_SUPABASE_CONFIG;
+        window.restoSupabase = supabase.createClient(config.url, config.key, {
+          realtime: { params: { eventsPerSecond: 10 } }
+        });
+        window.restoSupabaseReady = Boolean(config.url && config.key);
       } catch (e) {
-        window.restoFirebaseReady = false;
-        console.error('Firebase gagal diinisialisasi:', e);
+        window.restoSupabaseReady = false;
+        console.error('Supabase gagal diinisialisasi:', e);
       }
     </script>
 
@@ -360,19 +351,21 @@
             useEffect(() => { localStorage.setItem('qrResto_tables', JSON.stringify(tables)); }, [tables]);
             useEffect(() => { localStorage.setItem('qrResto_staff', JSON.stringify(staffUsers)); }, [staffUsers]);
 
-            // Firebase: order stream shared across devices. Requires signed-in staff and the supplied Firestore Rules.
+            // Supabase Realtime: semua perangkat menerima pesanan dan perubahan status.
             useEffect(() => {
-                if (!window.restoFirebaseReady || !currentUser) return;
-                const unsubscribe = window.restoDb.collection('orders').onSnapshot((snapshot) => {
-                    const sharedOrders = snapshot.docs.map(doc => ({ ...doc.data(), _docId: doc.id }));
-                    sharedOrders.sort((a, b) => String(b.time || '').localeCompare(String(a.time || '')));
-                    setOrders(sharedOrders);
-                }, (error) => {
-                    console.error('Gagal membaca pesanan online:', error);
-                    showCustomAlert('Sinkronisasi Gagal', 'Tidak dapat membaca pesanan online. Periksa login Firebase dan Firestore Security Rules.');
-                });
-                return () => unsubscribe();
-            }, [currentUser]);
+                if (!window.restoSupabaseReady) return;
+                let active = true;
+                const loadOrders = async () => {
+                    const { data, error } = await window.restoSupabase.from('orders').select('*').order('time', { ascending: false });
+                    if (error) { console.error('[v0] Gagal membaca pesanan online:', error); return; }
+                    if (active) setOrders(data || []);
+                };
+                loadOrders();
+                const channel = window.restoSupabase.channel('orders-realtime')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadOrders)
+                    .subscribe((status) => console.log('[v0] Realtime orders:', status));
+                return () => { active = false; window.restoSupabase.removeChannel(channel); };
+            }, []);
 
             useEffect(() => {
                 if (settings.appBackground) {
@@ -401,20 +394,22 @@
 
             const handleLoginSubmit = async (e) => {
                 e.preventDefault();
-                if (!window.restoFirebaseReady) {
-                    showCustomAlert('Firebase Belum Siap', 'Firebase belum berhasil diinisialisasi. Periksa koneksi internet dan konfigurasi.');
+                if (!window.restoSupabaseReady) {
+                    showCustomAlert('Supabase Belum Siap', 'Database online belum berhasil diinisialisasi.');
                     return;
                 }
                 const typedUser = loginForm.username.trim().toLowerCase();
                 const username = typedUser.includes('@') ? typedUser.split('@')[0] : typedUser;
-                const email = typedUser.includes('@') ? typedUser : `${username}@resto-qr-pro-dev.firebaseapp.com`;
-                try {
-                    const credential = await window.restoAuth.signInWithEmailAndPassword(email, loginForm.pin);
+                    const email = typedUser.includes('@') ? typedUser : `${username}@resto-qr-pro-dev.firebaseapp.com`;
+                    try {
+                    const { data, error } = await window.restoSupabase.auth.signInWithPassword({ email, password: loginForm.pin });
+                    if (error) throw error;
+                    const credential = { user: data.user };
                     const allowedUser = staffUsers.find(u => u.username.toLowerCase() === username);
-                    // Only known local staff names are mapped to application roles; Firebase Rules must also allowlist staff emails.
+                    // Hanya staf yang terdaftar di aplikasi yang boleh masuk ke panel kasir/admin.
                     if (!allowedUser) {
-                        await window.restoAuth.signOut();
-                        showCustomAlert('Akses Ditolak', 'Akun Firebase berhasil masuk, tetapi username tidak terdaftar pada data staf aplikasi.');
+                        await window.restoSupabase.auth.signOut();
+                        showCustomAlert('Akses Ditolak', 'Akun berhasil masuk, tetapi username tidak terdaftar pada data staf aplikasi.');
                         return;
                     }
                     setCurrentUser({ ...allowedUser, email: credential.user.email, uid: credential.user.uid });
@@ -422,13 +417,13 @@
                     setAdminTab('pos');
                     setLoginForm({ username: '', pin: '' });
                 } catch (error) {
-                    console.error('Login Firebase gagal:', error);
-                    showCustomAlert('Gagal Masuk', 'Login Firebase gagal. Pastikan akun staf sudah dibuat di Authentication dan password yang dimasukkan benar.');
+                    console.error('Login Supabase gagal:', error);
+                    showCustomAlert('Gagal Masuk', 'Login gagal. Pastikan akun staf sudah dibuat di Supabase Authentication dan password benar.');
                 }
             };
 
             const handleLogout = async () => {
-                try { if (window.restoFirebaseReady) await window.restoAuth.signOut(); } catch (e) { console.error(e); }
+                try { if (window.restoSupabaseReady) await window.restoSupabase.auth.signOut(); } catch (e) { console.error(e); }
                 setCurrentUser(null);
                 setView('landing');
             };
@@ -477,9 +472,9 @@
                     changeAmount: 0
                 };
                 try {
-                    if (!window.restoFirebaseReady) throw new Error('Firebase belum siap');
-                    // Customer can create a new order only; reading/updating orders is reserved for authenticated staff by Rules.
-                    await window.restoDb.collection('orders').doc(newOrder.id).set(newOrder);
+                    if (!window.restoSupabaseReady) throw new Error('Supabase belum siap');
+                    const { error } = await window.restoSupabase.from('orders').insert(newOrder);
+                    if (error) throw error;
                     setActiveOrder(newOrder);
                     setReceiptOrder(newOrder);
                     setCustomerCart([]);
@@ -546,8 +541,9 @@
                 
                 (async () => {
                     try {
-                        if (!window.restoFirebaseReady || !window.restoAuth.currentUser) throw new Error('Kasir belum login Firebase');
-                        await window.restoDb.collection('orders').doc(newOrder.id).set(newOrder);
+                        if (!window.restoSupabaseReady || !currentUser) throw new Error('Kasir belum login');
+                        const { error } = await window.restoSupabase.from('orders').insert(newOrder);
+                        if (error) throw error;
                         setPosCart([]);
                         setPosTableNo('');
                         setPosPaymentMethod('');
@@ -555,7 +551,7 @@
                         setReceiptOrder(newOrder);
                     } catch (error) {
                         console.error('Simpan transaksi kasir gagal:', error);
-                        showCustomAlert('Transaksi Gagal Disimpan', 'Transaksi kasir tidak tersimpan ke database online. Periksa koneksi dan aturan keamanan Firebase. Keranjang belum dikosongkan.');
+                        showCustomAlert('Transaksi Gagal Disimpan', 'Transaksi kasir tidak tersimpan ke database online. Periksa koneksi dan aturan keamanan Supabase. Keranjang belum dikosongkan.');
                     }
                 })();
             };
@@ -563,8 +559,9 @@
             // Helper for real-time status update
             const updateOrderStatus = async (orderId, newStatus) => {
                 try {
-                    if (!window.restoFirebaseReady || !window.restoAuth.currentUser) throw new Error('Staf belum login Firebase');
-                    await window.restoDb.collection('orders').doc(orderId).update({ status: newStatus, updatedAt: new Date().toISOString(), updatedBy: window.restoAuth.currentUser.email });
+                    if (!window.restoSupabaseReady || !currentUser) throw new Error('Staf belum login');
+                    const { error } = await window.restoSupabase.from('orders').update({ status: newStatus, updatedAt: new Date().toISOString(), updatedBy: currentUser.email }).eq('id', orderId);
+                    if (error) throw error;
                 } catch (error) {
                     console.error('Update status pesanan gagal:', error);
                     showCustomAlert('Status Belum Berubah', 'Status pesanan gagal diperbarui di database online. Periksa koneksi dan Firestore Security Rules.');
@@ -1220,7 +1217,7 @@
                                     <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                 </div>
                                 <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 mb-1.5 text-center">Login Staff</h2>
-                                <p className="text-[11px] sm:text-xs text-zinc-500 text-center mb-5">Masuk dengan akun staf Firebase yang sudah didaftarkan oleh administrator.</p>
+                                <p className="text-[11px] sm:text-xs text-zinc-500 text-center mb-5">Masuk dengan akun staf Supabase yang sudah didaftarkan oleh administrator.</p>
                                 
                                 <form onSubmit={handleLoginSubmit} className="space-y-3.5">
                                     <div>
@@ -1228,7 +1225,7 @@
                                         <input type="text" required placeholder="admin atau admin@resto-qr-pro-dev.firebaseapp.com" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-xs sm:text-sm focus:outline-none focus:border-brand-500" />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Password Firebase</label>
+                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Password Supabase</label>
                                         <input type="password" required placeholder="Password akun Firebase" value={loginForm.pin} onChange={(e) => setLoginForm({...loginForm, pin: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-center text-xs sm:text-sm tracking-widest focus:outline-none focus:border-brand-500" />
                                     </div>
                                     <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-brand-600/30 text-xs sm:text-sm mt-1">

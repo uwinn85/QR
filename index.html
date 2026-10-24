@@ -1519,16 +1519,16 @@
                                             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-zinc-200">
                                                 <div>
                                                     <h3 className="font-bold text-zinc-800">Manajemen Pesanan Masuk & Pembayaran</h3>
-                                                    <p className="text-xs text-zinc-500">Pesanan dikelompokkan berdasarkan tahap proses dan disajikan dalam bentuk tabel.</p>
+                                                    <p className="text-xs text-zinc-500">Pesanan dikelompokkan berdasarkan tahap proses dan disajikan dalam bentuk tabel dengan latar putih bersih.</p>
                                                 </div>
                                                 <div className="text-sm font-bold px-3 py-1 bg-brand-50 text-brand-600 rounded-lg">Total: {orders.length}</div>
                                             </div>
 
                                             {[
-                                                { key: 'unverified', title: '🔴 Belum Verifikasi (QR Pelanggan)', border: 'border-orange-200 bg-orange-50/10' },
-                                                { key: 'pending', title: '🟡 Menunggu Dapur / Diproses', border: 'border-yellow-200 bg-yellow-50/10' },
-                                                { key: 'processing', title: '🔵 Sedang Disiapkan / Siap Saji', border: 'border-blue-200 bg-blue-50/10' },
-                                                { key: 'completed', title: '🟢 Selesai / Sembunyikan', border: 'border-zinc-200 bg-zinc-50/30' }
+                                                { key: 'unverified', title: '🔴 Belum Verifikasi (QR Pelanggan)', border: 'border-orange-200' },
+                                                { key: 'pending', title: '🟡 Menunggu Dapur / Diproses', border: 'border-yellow-200' },
+                                                { key: 'processing', title: '🔵 Sedang Disiapkan / Siap Saji', border: 'border-blue-200' },
+                                                { key: 'completed', title: '🟢 Selesai / Sembunyikan', border: 'border-zinc-200' }
                                             ].map(group => {
                                                 const groupOrders = orders.filter(o => {
                                                     if (group.key === 'unverified') return o.status === 'unverified';
@@ -1542,14 +1542,14 @@
 
                                                 return (
                                                     <div key={group.key} className={`bg-white rounded-2xl shadow-sm border ${group.border} overflow-hidden`}>
-                                                        <div className="p-4 bg-zinc-50/80 border-b border-zinc-200 flex justify-between items-center">
+                                                        <div className="p-4 bg-white border-b border-zinc-200 flex justify-between items-center">
                                                             <h4 className="font-black text-sm text-zinc-800">{group.title}</h4>
-                                                            <span className="text-xs font-bold px-2.5 py-1 bg-white border border-zinc-200 rounded-full">{groupOrders.length} Pesanan</span>
+                                                            <span className="text-xs font-bold px-2.5 py-1 bg-zinc-50 border border-zinc-200 rounded-full">{groupOrders.length} Pesanan</span>
                                                         </div>
-                                                        <div className="overflow-x-auto">
-                                                            <table className="w-full text-left border-collapse">
+                                                        <div className="overflow-x-auto bg-white">
+                                                            <table className="w-full text-left border-collapse bg-white">
                                                                 <thead>
-                                                                    <tr className="bg-zinc-50/50 border-b border-zinc-200 text-xs font-bold text-zinc-500 uppercase">
+                                                                    <tr className="bg-white border-b border-zinc-200 text-xs font-bold text-zinc-500 uppercase">
                                                                         <th className="p-4">ID & Waktu</th>
                                                                         <th className="p-4">Meja / Tipe</th>
                                                                         <th className="p-4">Rincian Item Pesanan</th>
@@ -1557,9 +1557,9 @@
                                                                         <th className="p-4 text-center">Aksi / Status</th>
                                                                     </tr>
                                                                 </thead>
-                                                                <tbody className="divide-y divide-zinc-100 text-sm">
+                                                                <tbody className="divide-y divide-zinc-100 text-sm bg-white">
                                                                     {groupOrders.map((order, idx) => (
-                                                                        <tr key={idx} className="hover:bg-zinc-50/50 transition-colors">
+                                                                        <tr key={idx} className="hover:bg-zinc-50 transition-colors bg-white">
                                                                             <td className="p-4">
                                                                                 <span className="font-bold text-zinc-900 block">{order.id}</span>
                                                                                 <span className="text-xs text-zinc-400 block">{new Date(order.time).toLocaleTimeString('id-ID')} • {order.source}</span>
@@ -1642,10 +1642,10 @@
                                             </div>
 
                                             <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
-                                                <div className="overflow-x-auto">
-                                                    <table className="w-full text-left border-collapse">
+                                                <div className="overflow-x-auto bg-white">
+                                                    <table className="w-full text-left border-collapse bg-white">
                                                         <thead>
-                                                            <tr className="bg-zinc-50 border-b border-zinc-200 text-xs font-bold text-zinc-500 uppercase">
+                                                            <tr className="bg-white border-b border-zinc-200 text-xs font-bold text-zinc-500 uppercase">
                                                                 <th className="p-4">Menu</th>
                                                                 <th className="p-4">Kategori</th>
                                                                 <th className="p-4">Harga</th>
@@ -1653,14 +1653,14 @@
                                                                 <th className="p-4 text-center">Aksi</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody className="divide-y divide-zinc-100 text-sm">
+                                                        <tbody className="divide-y divide-zinc-100 text-sm bg-white">
                                                             {menuItems.length === 0 ? (
                                                                 <tr>
                                                                     <td colSpan="5" className="p-6 text-center text-zinc-400">Belum ada menu tersedia.</td>
                                                                 </tr>
                                                             ) : (
                                                                 menuItems.map(item => (
-                                                                    <tr key={item.id} className="hover:bg-zinc-50/50 transition-colors">
+                                                                    <tr key={item.id} className="hover:bg-zinc-50 transition-colors bg-white">
                                                                         <td className="p-4 flex items-center space-x-3">
                                                                             <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded-xl bg-zinc-100 flex-shrink-0" onError={(e) => { e.target.onerror = null; e.target.src = getFallbackImage(item.name); }} />
                                                                             <span className="font-bold text-zinc-800">{item.name}</span>

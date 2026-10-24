@@ -1515,86 +1515,112 @@
                                     )}
 
                                     {adminTab === 'orders' && (
-                                        <div className="space-y-4">
+                                        <div className="space-y-6">
                                             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-zinc-200">
                                                 <div>
                                                     <h3 className="font-bold text-zinc-800">Manajemen Pesanan Masuk & Pembayaran</h3>
-                                                    <p className="text-xs text-zinc-500">Pesanan dari QR Code pelanggan beserta konfirmasi pembayarannya langsung masuk untuk diverifikasi kasir.</p>
+                                                    <p className="text-xs text-zinc-500">Pesanan dikelompokkan berdasarkan tahap proses dan disajikan dalam bentuk tabel.</p>
                                                 </div>
                                                 <div className="text-sm font-bold px-3 py-1 bg-brand-50 text-brand-600 rounded-lg">Total: {orders.length}</div>
                                             </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                                {orders.length === 0 ? (
-                                                    <div className="col-span-full py-12 text-center text-zinc-400">Belum ada pesanan masuk.</div>
-                                                ) : (
-                                                    orders.map((order, idx) => (
-                                                        <div key={idx} className={`bg-white p-5 rounded-2xl shadow-sm border-2 transition-all ${
-                                                            order.status === 'unverified' ? 'border-orange-400 shadow-orange-100 bg-orange-50/20' :
-                                                            order.status === 'pending' ? 'border-yellow-400 shadow-yellow-100' : 
-                                                            order.status === 'processing' ? 'border-blue-400' : 'border-zinc-200 opacity-70'
-                                                        }`}>
-                                                            <div className="flex justify-between items-start mb-4 border-b border-zinc-100 pb-3">
-                                                                <div>
-                                                                    <span className="text-xs font-bold text-zinc-500 block mb-1">{order.id} • Sumber: <b>{order.source}</b></span>
-                                                                    <span className="font-black text-lg text-zinc-800">Meja: {order.table}</span>
-                                                                    <span className={`ml-2 text-xs font-bold px-2 py-0.5 rounded-full ${order.orderType === 'takeaway' ? 'bg-purple-100 text-purple-700' : 'bg-zinc-100 text-zinc-600'}`}>{order.orderType === 'takeaway' ? 'Bawa Pulang' : 'Dine-in'}</span>
-                                                                </div>
-                                                                <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase ${
-                                                                    order.status === 'unverified' ? 'bg-orange-100 text-orange-700' :
-                                                                    order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                                                                    order.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                                                                    'bg-green-100 text-green-700'
-                                                                }`}>
-                                                                    {order.status === 'unverified' ? 'Belum Verifikasi' : order.status}
-                                                                </span>
-                                                            </div>
-                                                            <div className="space-y-1 mb-4">
-                                                                {order.items.map((item, i) => (
-                                                                    <div key={i} className="flex justify-between text-sm">
-                                                                        <span className="font-medium text-zinc-700">{item.quantity}x {item.name}</span>
-                                                                        <span className="text-zinc-500 text-xs">Rp {(item.price * item.quantity).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2})}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                            {order.notes && (
-                                                                <div className="mb-4 p-2 bg-yellow-50 text-yellow-800 text-xs rounded-lg border border-yellow-200">
-                                                                    <b>Catatan:</b> {order.notes}
-                                                                </div>
-                                                            )}
-                                                            <div className="flex justify-between items-center pt-3 border-t border-zinc-100">
-                                                                <div className="text-sm">
-                                                                    <span className="block text-xs text-zinc-500">{paymentMethods.find(p=>p.id===order.paymentMethod)?.name || order.paymentMethod}</span>
-                                                                    <span className="font-black text-brand-600">Rp {order.total.toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2})}</span>
-                                                                </div>
-                                                                
-                                                                {order.status === 'unverified' && (
-                                                                    <div className="flex gap-2">
-                                                                        <button onClick={() => {
-                                                                            setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'pending' } : o));
-                                                                        }} className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-xs shadow-sm">
-                                                                            Verifikasi & Terima
-                                                                        </button>
-                                                                    </div>
-                                                                )}
 
-                                                                {order.status !== 'unverified' && (
-                                                                    <div className="flex gap-2">
-                                                                        <button onClick={() => {
-                                                                            const newStatus = order.status === 'pending' ? 'processing' : 'completed';
-                                                                            setOrders(orders.map(o => o.id === order.id ? { ...o, status: newStatus } : o));
-                                                                            if (newStatus === 'completed') {
-                                                                                setReceiptOrder(order);
-                                                                            }
-                                                                        }} className={`px-3 py-2 rounded-lg font-bold text-xs text-white shadow-sm transition-all ${order.status === 'pending' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-green-500 hover:bg-green-600'}`}>
-                                                                            {order.status === 'pending' ? 'Proses Dapur' : 'Selesaikan & Struk'}
-                                                                        </button>
-                                                                    </div>
-                                                                )}
-                                                            </div>
+                                            {[
+                                                { key: 'unverified', title: '🔴 Belum Verifikasi (QR Pelanggan)', border: 'border-orange-200 bg-orange-50/10' },
+                                                { key: 'pending', title: '🟡 Menunggu Dapur / Diproses', border: 'border-yellow-200 bg-yellow-50/10' },
+                                                { key: 'processing', title: '🔵 Sedang Disiapkan / Siap Saji', border: 'border-blue-200 bg-blue-50/10' },
+                                                { key: 'completed', title: '🟢 Selesai / Sembunyikan', border: 'border-zinc-200 bg-zinc-50/30' }
+                                            ].map(group => {
+                                                const groupOrders = orders.filter(o => {
+                                                    if (group.key === 'unverified') return o.status === 'unverified';
+                                                    if (group.key === 'pending') return o.status === 'pending';
+                                                    if (group.key === 'processing') return o.status === 'processing';
+                                                    if (group.key === 'completed') return o.status === 'completed';
+                                                    return false;
+                                                });
+
+                                                if (groupOrders.length === 0) return null;
+
+                                                return (
+                                                    <div key={group.key} className={`bg-white rounded-2xl shadow-sm border ${group.border} overflow-hidden`}>
+                                                        <div className="p-4 bg-zinc-50/80 border-b border-zinc-200 flex justify-between items-center">
+                                                            <h4 className="font-black text-sm text-zinc-800">{group.title}</h4>
+                                                            <span className="text-xs font-bold px-2.5 py-1 bg-white border border-zinc-200 rounded-full">{groupOrders.length} Pesanan</span>
                                                         </div>
-                                                    ))
-                                                )}
-                                            </div>
+                                                        <div className="overflow-x-auto">
+                                                            <table className="w-full text-left border-collapse">
+                                                                <thead>
+                                                                    <tr className="bg-zinc-50/50 border-b border-zinc-200 text-xs font-bold text-zinc-500 uppercase">
+                                                                        <th className="p-4">ID & Waktu</th>
+                                                                        <th className="p-4">Meja / Tipe</th>
+                                                                        <th className="p-4">Rincian Item Pesanan</th>
+                                                                        <th className="p-4">Total & Pembayaran</th>
+                                                                        <th className="p-4 text-center">Aksi / Status</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-zinc-100 text-sm">
+                                                                    {groupOrders.map((order, idx) => (
+                                                                        <tr key={idx} className="hover:bg-zinc-50/50 transition-colors">
+                                                                            <td className="p-4">
+                                                                                <span className="font-bold text-zinc-900 block">{order.id}</span>
+                                                                                <span className="text-xs text-zinc-400 block">{new Date(order.time).toLocaleTimeString('id-ID')} • {order.source}</span>
+                                                                            </td>
+                                                                            <td className="p-4">
+                                                                                <span className="font-bold text-zinc-800 block">Meja: {order.table}</span>
+                                                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${order.orderType === 'takeaway' ? 'bg-purple-100 text-purple-700' : 'bg-zinc-100 text-zinc-600'}`}>{order.orderType}</span>
+                                                                            </td>
+                                                                            <td className="p-4">
+                                                                                <div className="space-y-0.5 max-w-xs">
+                                                                                    {order.items.map((i, iIdx) => (
+                                                                                        <div key={iIdx} className="text-xs text-zinc-700">
+                                                                                            <b>{i.quantity}x</b> {i.name}
+                                                                                        </div>
+                                                                                    ))}
+                                                                                    {order.notes && <div className="text-[11px] text-yellow-800 bg-yellow-50 p-1 rounded mt-1">Catatan: {order.notes}</div>}
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="p-4">
+                                                                                <span className="font-black text-brand-600 block">Rp {order.total.toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2})}</span>
+                                                                                <span className="text-xs text-zinc-500 block">{paymentMethods.find(p=>p.id===order.paymentMethod)?.name || order.paymentMethod}</span>
+                                                                            </td>
+                                                                            <td className="p-4 text-center">
+                                                                                {order.status === 'unverified' && (
+                                                                                    <button onClick={() => setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'pending' } : o))} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs shadow-sm transition-colors whitespace-nowrap">
+                                                                                        Verifikasi & Terima
+                                                                                    </button>
+                                                                                )}
+                                                                                {order.status === 'pending' && (
+                                                                                    <button onClick={() => setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'processing' } : o))} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm transition-colors whitespace-nowrap">
+                                                                                        Proses Dapur
+                                                                                    </button>
+                                                                                )}
+                                                                                {order.status === 'processing' && (
+                                                                                    <button onClick={() => {
+                                                                                        setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'completed' } : o));
+                                                                                        setReceiptOrder(order);
+                                                                                    }} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-sm transition-colors whitespace-nowrap">
+                                                                                        Selesaikan & Struk
+                                                                                    </button>
+                                                                                )}
+                                                                                {order.status === 'completed' && (
+                                                                                    <button onClick={() => setReceiptOrder(order)} className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-bold transition-colors whitespace-nowrap">
+                                                                                        Lihat Struk
+                                                                                    </button>
+                                                                                )}
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {orders.length === 0 && (
+                                                <div className="bg-white p-12 text-center text-zinc-400 rounded-2xl border border-zinc-200">
+                                                    Belum ada pesanan masuk sama sekali.
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 

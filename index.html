@@ -484,9 +484,10 @@
                 };
                 try {
                     if (!window.restoSupabaseReady) throw new Error('Supabase belum siap');
-                    const { error } = await window.restoSupabase.from('orders').insert(newOrder);
+                    const { data: savedOrder, error } = await window.restoSupabase.from('orders').upsert(newOrder, { onConflict: 'id' }).select().single();
                     if (error) throw error;
-                    setActiveOrder(newOrder);
+                    const confirmedOrder = normalizeOrder(savedOrder || newOrder);
+                    setActiveOrder(confirmedOrder);
                     setReceiptOrder(newOrder);
                     setCustomerCart([]);
                     setShowCart(false);
@@ -553,7 +554,7 @@
                 (async () => {
                     try {
                         if (!window.restoSupabaseReady || !currentUser) throw new Error('Kasir belum login');
-                        const { error } = await window.restoSupabase.from('orders').insert(newOrder);
+                        const { error } = await window.restoSupabase.from('orders').upsert(newOrder, { onConflict: 'id' });
                         if (error) throw error;
                         setPosCart([]);
                         setPosTableNo('');

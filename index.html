@@ -366,9 +366,15 @@
             useEffect(() => {
                 if (!window.restoSupabaseReady) return;
                 let active = true;
-                const loadOrders = async () => {
+                const loadOrders = async (attempt = 0) => {
                     const { data, error } = await window.restoSupabase.from('orders').select('*').order('time', { ascending: false });
-                    if (error) { console.error('[v0] Gagal membaca pesanan online:', error); return; }
+                    if (error) {
+                        console.error('[v0] Gagal membaca pesanan online:', error);
+                        if (active && attempt < 3) {
+                            window.setTimeout(() => loadOrders(attempt + 1), 750 * (attempt + 1));
+                        }
+                        return;
+                    }
                     if (active) setOrders((data || []).map(normalizeOrder));
                 };
                 loadOrders();

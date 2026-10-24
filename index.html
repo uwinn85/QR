@@ -141,6 +141,17 @@
             return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
         };
 
+        const normalizeOrder = (order) => ({
+            ...order,
+            table: order.table ?? order.table_name ?? '',
+            orderType: order.orderType ?? order.order_type ?? 'dine-in',
+            paymentMethod: order.paymentMethod ?? order.payment_method ?? '',
+            cashGiven: Number(order.cashGiven ?? order.cash_given ?? 0),
+            changeAmount: Number(order.changeAmount ?? order.change_amount ?? 0),
+            updatedAt: order.updatedAt ?? order.updated_at,
+            updatedBy: order.updatedBy ?? order.updated_by
+        });
+
         const loadStoredValue = (key, fallback) => {
             try {
                 const stored = localStorage.getItem(key);
@@ -358,7 +369,7 @@
                 const loadOrders = async () => {
                     const { data, error } = await window.restoSupabase.from('orders').select('*').order('time', { ascending: false });
                     if (error) { console.error('[v0] Gagal membaca pesanan online:', error); return; }
-                    if (active) setOrders(data || []);
+                    if (active) setOrders((data || []).map(normalizeOrder));
                 };
                 loadOrders();
                 const channel = window.restoSupabase.channel('orders-realtime')
@@ -456,20 +467,20 @@
                 const subtotal = calculateSubtotal(customerCart);
                 const newOrder = {
                     id: generateOrderId(),
-                    table: customerOrderType === 'takeaway' ? 'Takeaway' : customerTable,
-                    orderType: customerOrderType,
+                    table_name: customerOrderType === 'takeaway' ? 'Takeaway' : customerTable,
+                    order_type: customerOrderType,
                     items: [...customerCart],
                     subtotal,
                     tax: calculateTax(subtotal),
                     service: calculateService(subtotal),
                     total: calculateTotal(customerCart),
-                    paymentMethod: checkoutData.paymentMethod,
+                    payment_method: checkoutData.paymentMethod,
                     notes: checkoutData.notes,
                     status: 'unverified',
                     time: new Date().toISOString(),
                     source: 'QR',
-                    cashGiven: 0,
-                    changeAmount: 0
+                    cash_given: 0,
+                    change_amount: 0
                 };
                 try {
                     if (!window.restoSupabaseReady) throw new Error('Supabase belum siap');
@@ -523,20 +534,20 @@
 
                 const newOrder = {
                     id: generateOrderId(),
-                    table: posTableNo || 'Takeaway',
-                    orderType: posOrderType,
+                    table_name: posTableNo || 'Takeaway',
+                    order_type: posOrderType,
                     items: [...posCart],
                     subtotal: calculateSubtotal(posCart),
                     tax: calculateTax(calculateSubtotal(posCart)),
                     service: calculateService(calculateSubtotal(posCart)),
                     total: totalAmt,
-                    paymentMethod: posPaymentMethod,
+                    payment_method: posPaymentMethod,
                     notes: '',
                     status: 'completed',
                     time: new Date().toISOString(),
                     source: 'KASIR',
-                    cashGiven: isCash ? cashGivenNum : 0,
-                    changeAmount: isCash ? changeNum : 0
+                    cash_given: isCash ? cashGivenNum : 0,
+                    change_amount: isCash ? changeNum : 0
                 };
                 
                 (async () => {
@@ -560,7 +571,7 @@
             const updateOrderStatus = async (orderId, newStatus) => {
                 try {
                     if (!window.restoSupabaseReady || !currentUser) throw new Error('Staf belum login');
-                    const { error } = await window.restoSupabase.from('orders').update({ status: newStatus, updatedAt: new Date().toISOString(), updatedBy: currentUser.email }).eq('id', orderId);
+                    const { error } = await window.restoSupabase.from('orders').update({ status: newStatus, updated_at: new Date().toISOString(), updated_by: currentUser.email }).eq('id', orderId);
                     if (error) throw error;
                 } catch (error) {
                     console.error('Update status pesanan gagal:', error);

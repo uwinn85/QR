@@ -492,7 +492,7 @@
                     setShowCart(false);
                 } catch (error) {
                     console.error('Kirim pesanan gagal:', error);
-                    showCustomAlert('Pesanan Belum Terkirim', 'Pesanan tidak berhasil disimpan ke server. Periksa internet dan Firestore Security Rules, lalu coba lagi. Keranjang tetap disimpan agar pesanan tidak hilang.');
+                    showCustomAlert('Pesanan Belum Terkirim', 'Pesanan tidak berhasil disimpan ke database online. Periksa koneksi internet dan izin Supabase, lalu coba lagi. Keranjang tetap disimpan agar pesanan tidak hilang.');
                 }
             };
 
@@ -575,7 +575,7 @@
                     if (error) throw error;
                 } catch (error) {
                     console.error('Update status pesanan gagal:', error);
-                    showCustomAlert('Status Belum Berubah', 'Status pesanan gagal diperbarui di database online. Periksa koneksi dan Firestore Security Rules.');
+                    showCustomAlert('Status Belum Berubah', 'Status pesanan gagal diperbarui di database online. Periksa koneksi dan izin Supabase.');
                 }
             };
 

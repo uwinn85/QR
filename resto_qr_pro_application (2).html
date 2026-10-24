@@ -1,0 +1,1657 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resto QR Pro</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- QRCode JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: 'rgb(var(--brand-50) / <alpha-value>)',
+                            100: 'rgb(var(--brand-100) / <alpha-value>)',
+                            200: 'rgb(var(--brand-200) / <alpha-value>)',
+                            300: 'rgb(var(--brand-300) / <alpha-value>)',
+                            400: 'rgb(var(--brand-400) / <alpha-value>)',
+                            500: 'rgb(var(--brand-500) / <alpha-value>)',
+                            600: 'rgb(var(--brand-600) / <alpha-value>)',
+                            700: 'rgb(var(--brand-700) / <alpha-value>)',
+                            800: 'rgb(var(--brand-800) / <alpha-value>)',
+                            900: 'rgb(var(--brand-900) / <alpha-value>)',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --brand-50: 253 242 242;
+            --brand-100: 251 228 228;
+            --brand-200: 248 202 204;
+            --brand-300: 243 160 163;
+            --brand-400: 235 108 113;
+            --brand-500: 223 60 67;
+            --brand-600: 203 38 45;
+            --brand-700: 170 28 34;
+            --brand-800: 141 26 31;
+            --brand-900: 117 26 30;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: #f4f4f5; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .glass-panel { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const DEFAULT_SETTINGS = {
+            restoName: "Nusantara Resto",
+            taxRate: 11,
+            serviceCharge: 5,
+            staticQris: "00020101021126580016ID.CO.QRIS.WWW01189360091430000000010303UMI51440014ID.A0107070303UMI021500000000000000303UMI5204581253033605802ID5915Nusantara Resto6007Jakarta6304",
+            appBackground: "#f4f4f5",
+            themeColor: "red",
+        };
+
+        const THEMES = {
+            red: { 50: '#fdf2f2', 100: '#fbe4e4', 200: '#f8cacc', 300: '#f3a0a3', 400: '#eb6c71', 500: '#df3c43', 600: '#cb262d', 700: '#aa1c22', 800: '#8d1a1f', 900: '#751a1e' },
+            blue: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a' },
+            green: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d' },
+            purple: { 50: '#faf5ff', 100: '#f3e8ff', 200: '#e9d5ff', 300: '#d8b4fe', 400: '#c084fc', 500: '#a855f7', 600: '#9333ea', 700: '#7e22ce', 800: '#6b21a8', 900: '#581c87' },
+            orange: { 50: '#fff7ed', 100: '#ffedd5', 200: '#fed7aa', 300: '#fdba74', 400: '#fb923c', 500: '#f97316', 600: '#ea580c', 700: '#c2410c', 800: '#9a3412', 900: '#7c2d12' },
+            dark: { 50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7', 300: '#d4d4d8', 400: '#a1a1aa', 500: '#71717a', 600: '#52525b', 700: '#3f3f46', 800: '#27272a', 900: '#18181b' }
+        };
+
+        const hexToRgb = (hex) => {
+            const h = hex.replace('#', '');
+            const r = parseInt(h.substring(0, 2), 16);
+            const g = parseInt(h.substring(2, 4), 16);
+            const b = parseInt(h.substring(4, 6), 16);
+            return `${r} ${g} ${b}`;
+        };
+
+        const DEFAULT_PAYMENT_METHODS = [
+            { id: 'qris', name: 'QRIS (Gopay, OVO, Dana)', type: 'qris', isActive: true },
+            { id: 'cash', name: 'Tunai di Kasir', type: 'cash', isActive: true },
+            { id: 'transfer', name: 'Transfer Bank (BCA: 12345678)', type: 'transfer', isActive: true },
+        ];
+
+        const DEFAULT_CATEGORIES = [
+            { id: 'Semua', name: 'Semua Menu' },
+            { id: 'Makanan Utama', name: 'Makanan Utama' },
+            { id: 'Minuman', name: 'Minuman' },
+            { id: 'Camilan', name: 'Camilan' },
+            { id: 'Penutup', name: 'Penutup' }
+        ];
+
+        const DEFAULT_MENU = [
+            { id: 1, name: 'Nasi Goreng Spesial', price: 45000, category: 'Makanan Utama', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Nasi+Goreng', description: 'Nasi goreng dengan telur, ayam, dan udang.' },
+            { id: 2, name: 'Sop Buntut Bakar', price: 85000, category: 'Makanan Utama', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Sop+Buntut', description: 'Sop buntut sapi pilihan dibakar dengan bumbu kecap.' },
+            { id: 3, name: 'Ayam Penyet Sambal Ijo', price: 38000, category: 'Makanan Utama', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Ayam+Penyet', description: 'Ayam goreng gurih dengan sambal hijau ekstra pedas.' },
+            { id: 4, name: 'Es Teh Manis', price: 10000, category: 'Minuman', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Es+Teh', description: 'Teh melati seduh segar.' },
+            { id: 5, name: 'Es Kopi Susu Aren', price: 25000, category: 'Minuman', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Kopi+Susu', description: 'Espresso, susu, dan gula aren asli.' },
+            { id: 6, name: 'Tahu Cabe Garam', price: 22000, category: 'Camilan', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Tahu+Garam', description: 'Tahu krispi tumis bawang putih dan cabe rawit.' },
+            { id: 7, name: 'Pisang Goreng Keju', price: 20000, category: 'Penutup', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Pisang+Goreng', description: 'Pisang kepok goreng dengan taburan keju melimpah.' }
+        ];
+
+        const DEFAULT_USERS = [
+            { id: 1, username: 'admin', pin: '1234', role: 'admin', name: 'Administrator Utama' },
+            { id: 2, username: 'kasir1', pin: '1111', role: 'cashier', name: 'Kasir Shift 1' },
+            { id: 3, username: 'kasir2', pin: '2222', role: 'cashier', name: 'Kasir Shift 2' },
+        ];
+
+        function calculateCRC16(str) {
+            let crc = 0xFFFF;
+            for (let c = 0; c < str.length; c++) {
+                crc ^= str.charCodeAt(c) << 8;
+                for (let i = 0; i < 8; i++) {
+                    if (crc & 0x8000) {
+                        crc = (crc << 1) ^ 0x1021;
+                    } else {
+                        crc = crc << 1;
+                    }
+                }
+            }
+            let hex = (crc & 0xFFFF).toString(16).toUpperCase();
+            while (hex.length < 4) hex = '0' + hex;
+            return hex;
+        }
+
+        function generateDynamicQris(staticQrisString, amount) {
+            if (!staticQrisString || typeof staticQrisString !== 'string') return '';
+            let qris = staticQrisString.trim();
+            if (qris.length < 10) return qris;
+
+            if (qris.endsWith('6304') && qris.length >= 4) {
+                qris = qris.slice(0, -4);
+            } else {
+                const idx63 = qris.lastIndexOf('6304');
+                if (idx63 !== -1) {
+                    qris = qris.slice(0, idx63);
+                }
+            }
+
+            if (qris.includes('010211')) {
+                qris = qris.replace('010211', '010212');
+            } else if (!qris.includes('010212')) {
+                qris = '000201010212' + qris.replace('000201', '');
+            }
+
+            let cleanQris = '';
+            let i = 0;
+            while (i < qris.length) {
+                const tag = qris.slice(i, i + 2);
+                const lenStr = qris.slice(i + 2, i + 4);
+                const len = parseInt(lenStr, 10);
+                if (isNaN(len)) {
+                    cleanQris += qris.slice(i);
+                    break;
+                }
+                const value = qris.slice(i + 4, i + 4 + len);
+                if (tag !== '54') {
+                    cleanQris += tag + lenStr + value;
+                }
+                i += 4 + len;
+            }
+
+            const amountStr = Math.round(amount).toString();
+            const tag54Val = '54' + (amountStr.length < 10 ? '0' + amountStr.length : amountStr.length) + amountStr;
+
+            const idx58 = cleanQris.indexOf('5802ID');
+            const idx59 = cleanQris.indexOf('59');
+            if (idx58 !== -1) {
+                cleanQris = cleanQris.slice(0, idx58) + tag54Val + cleanQris.slice(idx58);
+            } else if (idx59 !== -1) {
+                cleanQris = cleanQris.slice(0, idx59) + tag54Val + cleanQris.slice(idx59);
+            } else {
+                cleanQris += tag54Val;
+            }
+
+            cleanQris += '6304';
+            const crcVal = calculateCRC16(cleanQris);
+            return cleanQris + crcVal;
+        }
+
+        function App() {
+            const [view, setView] = useState('landing');
+            const [adminTab, setAdminTab] = useState('pos');
+            const [currentUser, setCurrentUser] = useState(null); 
+            
+            const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+            const [paymentMethods, setPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
+            const [menuItems, setMenuItems] = useState(DEFAULT_MENU);
+            const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+            const [orders, setOrders] = useState([]);
+            const [staffUsers, setStaffUsers] = useState(DEFAULT_USERS);
+            const [tables, setTables] = useState([
+                { id: 'T1', name: 'Meja 1', link: window.location.origin + window.location.pathname + '?table=1' },
+                { id: 'T2', name: 'Meja 2', link: window.location.origin + window.location.pathname + '?table=2' }
+            ]);
+
+            const [loginForm, setLoginForm] = useState({ username: '', pin: '' });
+            const [customerTable, setCustomerTable] = useState('');
+            const [customerOrderType, setCustomerOrderType] = useState('dine-in');
+            const [customerCart, setCustomerCart] = useState([]);
+            const [customerActiveCat, setCustomerActiveCat] = useState('Semua');
+            const [showCart, setShowCart] = useState(false);
+            const [checkoutData, setCheckoutData] = useState({ paymentMethod: '', notes: '' });
+            const [activeOrder, setActiveOrder] = useState(null);
+
+            const [posCart, setPosCart] = useState([]);
+            const [posActiveCat, setPosActiveCat] = useState('Semua');
+            const [posTableNo, setPosTableNo] = useState('');
+            const [posPaymentMethod, setPosPaymentMethod] = useState('');
+            const [posOrderType, setPosOrderType] = useState('dine-in');
+
+            const [receiptOrder, setReceiptOrder] = useState(null);
+
+            const [showMenuModal, setShowMenuModal] = useState(false);
+            const [editingMenu, setEditingMenu] = useState(null);
+            const [menuForm, setMenuForm] = useState({ name: '', price: '', category: 'Makanan Utama', image: '', description: '' });
+
+            const [showStaffModal, setShowStaffModal] = useState(false);
+            const [editingStaff, setEditingStaff] = useState(null);
+            const [staffForm, setStaffForm] = useState({ username: '', pin: '', name: '', role: 'cashier' });
+
+            const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+
+            const showCustomAlert = (title, message, onConfirm = null) => {
+                setModalConfig({ isOpen: true, title, message, onConfirm });
+            };
+
+            const closeCustomAlert = () => {
+                setModalConfig({ isOpen: false, title: '', message: '', onConfirm: null });
+            };
+
+            useEffect(() => {
+                const sSettings = localStorage.getItem('qrResto_settings');
+                if (sSettings) setSettings(JSON.parse(sSettings));
+                
+                const sPayments = localStorage.getItem('qrResto_payments');
+                if (sPayments) setPaymentMethods(JSON.parse(sPayments));
+
+                const sMenu = localStorage.getItem('qrResto_menu');
+                if (sMenu) setMenuItems(JSON.parse(sMenu));
+
+                const sOrders = localStorage.getItem('qrResto_orders');
+                if (sOrders) setOrders(JSON.parse(sOrders));
+
+                const sTables = localStorage.getItem('qrResto_tables');
+                if (sTables) setTables(JSON.parse(sTables));
+
+                const sStaff = localStorage.getItem('qrResto_staff');
+                if (sStaff) setStaffUsers(JSON.parse(sStaff));
+
+                const urlParams = new URLSearchParams(window.location.search);
+                const tableParam = urlParams.get('table');
+                if (tableParam) {
+                    setCustomerTable(tableParam);
+                    setView('customer');
+                    window.history.pushState({}, '', window.location.pathname);
+                }
+            }, []);
+
+            useEffect(() => { localStorage.setItem('qrResto_settings', JSON.stringify(settings)); }, [settings]);
+            useEffect(() => { localStorage.setItem('qrResto_payments', JSON.stringify(paymentMethods)); }, [paymentMethods]);
+            useEffect(() => { localStorage.setItem('qrResto_menu', JSON.stringify(menuItems)); }, [menuItems]);
+            useEffect(() => { localStorage.setItem('qrResto_orders', JSON.stringify(orders)); }, [orders]);
+            useEffect(() => { localStorage.setItem('qrResto_tables', JSON.stringify(tables)); }, [tables]);
+            useEffect(() => { localStorage.setItem('qrResto_staff', JSON.stringify(staffUsers)); }, [staffUsers]);
+
+            useEffect(() => {
+                if (settings.appBackground) {
+                    const bg = settings.appBackground.trim();
+                    if (bg.startsWith('http') || bg.startsWith('data:image')) {
+                        document.body.style.backgroundImage = `url('${bg}')`;
+                        document.body.style.backgroundSize = 'cover';
+                        document.body.style.backgroundPosition = 'center';
+                        document.body.style.backgroundAttachment = 'fixed';
+                        document.body.style.backgroundColor = '#f4f4f5';
+                    } else {
+                        document.body.style.backgroundColor = bg || '#f4f4f5';
+                        document.body.style.backgroundImage = 'none';
+                    }
+                }
+
+                const theme = THEMES[settings.themeColor || 'red'];
+                if (theme) {
+                    const root = document.documentElement;
+                    for (const [key, value] of Object.entries(theme)) {
+                        root.style.setProperty(`--brand-${key}`, hexToRgb(value));
+                    }
+                }
+            }, [settings.appBackground, settings.themeColor]);
+
+            const generateOrderId = () => `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+            const calculateSubtotal = (cart) => cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const calculateTax = (subtotal) => subtotal * (settings.taxRate / 100);
+            const calculateService = (subtotal) => subtotal * (settings.serviceCharge / 100);
+            const calculateTotal = (cart) => {
+                const sub = calculateSubtotal(cart);
+                return sub + calculateTax(sub) + calculateService(sub);
+            };
+
+            const handleLoginSubmit = (e) => {
+                e.preventDefault();
+                const found = staffUsers.find(u => u.username === loginForm.username && u.pin === loginForm.pin);
+                if (found) {
+                    setCurrentUser(found);
+                    setView('admin');
+                    setAdminTab('pos');
+                    setLoginForm({ username: '', pin: '' });
+                } else {
+                    showCustomAlert('Gagal Masuk', 'Username atau PIN salah. Silakan coba lagi.');
+                }
+            };
+
+            const handleLogout = () => {
+                setCurrentUser(null);
+                setView('landing');
+            };
+
+            const handleCustomerLogin = (e) => {
+                e.preventDefault();
+                if (customerTable.trim() || customerOrderType === 'takeaway') setView('customer');
+            };
+
+            const addToCustomerCart = (item) => {
+                setCustomerCart(prev => {
+                    const exists = prev.find(i => i.id === item.id);
+                    if (exists) return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+                    return [...prev, { ...item, quantity: 1 }];
+                });
+            };
+
+            const updateCustomerQuantity = (id, delta) => {
+                setCustomerCart(prev => prev.map(item => {
+                    if (item.id === id) {
+                        const newQ = item.quantity + delta;
+                        return newQ > 0 ? { ...item, quantity: newQ } : item;
+                    }
+                    return item;
+                }).filter(item => item.quantity > 0));
+            };
+
+            const handleCustomerCheckout = () => {
+                if (!checkoutData.paymentMethod || customerCart.length === 0) return;
+                
+                const newOrder = {
+                    id: generateOrderId(),
+                    table: customerOrderType === 'takeaway' ? 'Takeaway' : customerTable,
+                    orderType: customerOrderType,
+                    items: [...customerCart],
+                    subtotal: calculateSubtotal(customerCart),
+                    tax: calculateTax(calculateSubtotal(customerCart)),
+                    service: calculateService(calculateSubtotal(customerCart)),
+                    total: calculateTotal(customerCart),
+                    paymentMethod: checkoutData.paymentMethod,
+                    notes: checkoutData.notes,
+                    status: 'unverified', 
+                    time: new Date().toISOString(),
+                    source: 'QR'
+                };
+                setOrders([newOrder, ...orders]);
+                setActiveOrder(newOrder);
+                setReceiptOrder(newOrder); // Tampilkan struk seketika
+                setCustomerCart([]);
+                setShowCart(false);
+            };
+
+            const addToPosCart = (item) => {
+                setPosCart(prev => {
+                    const exists = prev.find(i => i.id === item.id);
+                    if (exists) return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+                    return [...prev, { ...item, quantity: 1 }];
+                });
+            };
+
+            const updatePosQuantity = (id, delta) => {
+                setPosCart(prev => prev.map(item => {
+                    if (item.id === id) {
+                        const newQ = item.quantity + delta;
+                        return newQ > 0 ? { ...item, quantity: newQ } : item;
+                    }
+                    return item;
+                }).filter(item => item.quantity > 0));
+            };
+
+            const handlePosCheckout = () => {
+                if (!posPaymentMethod || posCart.length === 0) return;
+                const newOrder = {
+                    id: generateOrderId(),
+                    table: posTableNo || 'Takeaway',
+                    orderType: posOrderType,
+                    items: [...posCart],
+                    subtotal: calculateSubtotal(posCart),
+                    tax: calculateTax(calculateSubtotal(posCart)),
+                    service: calculateService(calculateSubtotal(posCart)),
+                    total: calculateTotal(posCart),
+                    paymentMethod: posPaymentMethod,
+                    notes: '',
+                    status: 'completed',
+                    time: new Date().toISOString(),
+                    source: 'KASIR'
+                };
+                setOrders([newOrder, ...orders]);
+                setPosCart([]);
+                setPosTableNo('');
+                setPosPaymentMethod('');
+                setReceiptOrder(newOrder);
+            };
+
+            const saveMenu = (e) => {
+                e.preventDefault();
+                if (editingMenu) {
+                    setMenuItems(menuItems.map(m => m.id === editingMenu.id ? { ...menuForm, id: m.id, price: Number(menuForm.price) } : m));
+                } else {
+                    setMenuItems([...menuItems, { ...menuForm, id: Date.now(), price: Number(menuForm.price) }]);
+                }
+                setShowMenuModal(false);
+            };
+
+            const deleteMenu = (id) => {
+                showCustomAlert('Hapus Menu', 'Apakah Anda yakin ingin menghapus menu ini?', () => {
+                    setMenuItems(menuItems.filter(m => m.id !== id));
+                });
+            };
+
+            const openMenuModal = (menu = null) => {
+                if (menu) {
+                    setEditingMenu(menu);
+                    setMenuForm(menu);
+                } else {
+                    setEditingMenu(null);
+                    setMenuForm({ name: '', price: '', category: 'Makanan Utama', image: '', description: '' });
+                }
+                setShowMenuModal(true);
+            };
+
+            const saveStaff = (e) => {
+                e.preventDefault();
+                if (editingStaff) {
+                    setStaffUsers(staffUsers.map(s => s.id === editingStaff.id ? { ...staffForm, id: s.id } : s));
+                } else {
+                    setStaffUsers([...staffUsers, { ...staffForm, id: Date.now() }]);
+                }
+                setShowStaffModal(false);
+            };
+
+            const deleteStaff = (id) => {
+                if (staffUsers.length <= 1) {
+                    showCustomAlert('Peringatan', 'Restoran harus memiliki setidaknya 1 akun staff.');
+                    return;
+                }
+                showCustomAlert('Hapus Staff', 'Apakah Anda yakin ingin menghapus akun staff ini?', () => {
+                    setStaffUsers(staffUsers.filter(s => s.id !== id));
+                });
+            };
+
+            const openStaffModal = (staff = null) => {
+                if (staff) {
+                    setEditingStaff(staff);
+                    setStaffForm(staff);
+                } else {
+                    setEditingStaff(null);
+                    setStaffForm({ username: '', pin: '', name: '', role: 'cashier' });
+                }
+                setShowStaffModal(true);
+            };
+
+            const addTable = () => {
+                const name = prompt('Masukkan Nomor/Nama Meja baru:');
+                if (name) {
+                    const id = `T${Date.now()}`;
+                    const link = `${window.location.origin}${window.location.pathname}?table=${encodeURIComponent(name)}`;
+                    setTables([...tables, { id, name, link }]);
+                }
+            };
+
+            const deleteTable = (id) => {
+                showCustomAlert('Hapus Meja', 'Apakah Anda yakin ingin menghapus meja ini?', () => {
+                    setTables(tables.filter(t => t.id !== id));
+                });
+            };
+
+            const printQR = (table) => {
+                const printWindow = window.open('', '_blank');
+                if (!printWindow) {
+                    showCustomAlert('Peringatan', 'Pop-up terblokir oleh browser.');
+                    return;
+                }
+                printWindow.document.write(`
+                    <html>
+                    <head>
+                        <title>Print QR - ${table.name}</title>
+                        <style>
+                            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                            .card { border: 2px dashed #000; padding: 40px; text-align: center; border-radius: 20px; }
+                            h1 { margin: 0 0 10px 0; font-size: 24px; }
+                            p { margin: 0 0 20px 0; color: #666; }
+                            #qrcode { display: flex; justify-content: center; margin-bottom: 20px;}
+                        </style>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+                    </head>
+                    <body>
+                        <div class="card">
+                            <h1>${settings.restoName}</h1>
+                            <p>Scan untuk Memesan<br><b>Meja: ${table.name}</b></p>
+                            <div id="qrcode"></div>
+                        </div>
+                        <script>
+                            new QRCode(document.getElementById("qrcode"), {
+                                text: "${table.link}", width: 250, height: 250
+                            });
+                            setTimeout(() => { window.print(); window.close(); }, 800);
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                printWindow.document.close();
+            };
+
+            const printReceipt = (order) => {
+                const printWindow = window.open('', '_blank');
+                if (!printWindow) {
+                    showCustomAlert('Peringatan', 'Pop-up terblokir oleh browser.');
+                    return;
+                }
+                const paymentName = paymentMethods.find(p => p.id === order.paymentMethod)?.name || order.paymentMethod;
+                const isQris = paymentMethods.find(p => p.id === order.paymentMethod)?.type === 'qris';
+                const qrisImgUrl = isQris ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(generateDynamicQris(settings.staticQris, Math.round(order.total)))}` : '';
+
+                printWindow.document.write(`
+                    <html>
+                    <head>
+                        <title>Struk Pembayaran - ${order.id}</title>
+                        <style>
+                            body { font-family: 'Courier New', Courier, monospace; width: 300px; margin: 0 auto; padding: 10px; font-size: 12px; color: #000; }
+                            .center { text-align: center; }
+                            .bold { font-weight: bold; }
+                            .line { border-bottom: 1px dashed #000; margin: 8px 0; }
+                            .flex { display: flex; justify-content: space-between; }
+                            .qris-box { text-align: center; margin: 10px 0; }
+                            .qris-box img { width: 120px; height: 120px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="center bold" style="font-size: 14px;">${settings.restoName}</div>
+                        <div class="center" style="font-size: 10px;">Struk Pembayaran Resmi</div>
+                        <div class="line"></div>
+                        <div>ID Pesanan: ${order.id}</div>
+                        <div>Waktu: ${new Date(order.time).toLocaleString('id-ID')}</div>
+                        <div>Meja / Tipe: ${order.table} (${order.orderType})</div>
+                        <div>Kasir/Sumber: ${currentUser?.name || order.source}</div>
+                        <div class="line"></div>
+                        <div>
+                            ${order.items.map(i => `
+                                <div>${i.quantity}x ${i.name}</div>
+                                <div class="flex">
+                                    <span>  @ Rp ${i.price.toLocaleString('id-ID')}</span>
+                                    <span>Rp ${(i.price * i.quantity).toLocaleString('id-ID')}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="line"></div>
+                        <div class="flex"><span>Subtotal:</span><span>Rp ${order.subtotal.toLocaleString('id-ID')}</span></div>
+                        ${settings.taxRate > 0 ? `<div class="flex"><span>Pajak (${settings.taxRate}%):</span><span>Rp ${order.tax.toLocaleString('id-ID')}</span></div>` : ''}
+                        ${settings.serviceCharge > 0 ? `<div class="flex"><span>Service (${settings.serviceCharge}%):</span><span>Rp ${order.service.toLocaleString('id-ID')}</span></div>` : ''}
+                        <div class="line"></div>
+                        <div class="flex bold" style="font-size: 13px;"><span>TOTAL:</span><span>Rp ${order.total.toLocaleString('id-ID')}</span></div>
+                        <div class="center" style="margin-top: 5px;">Pembayaran: ${paymentName}</div>
+                        
+                        ${isQris ? `
+                            <div class="line"></div>
+                            <div class="center bold">QRIS PEMBAYARAN</div>
+                            <div class="qris-box">
+                                <img src="${qrisImgUrl}" alt="QRIS" />
+                            </div>
+                            <div class="center" style="font-size: 10px;">Scan untuk konfirmasi pembayaran</div>
+                        ` : ''}
+
+                        <div class="line"></div>
+                        <div class="center" style="margin-top: 15px; font-size: 11px;">Terima Kasih Atas Kunjungan Anda!</div>
+                        <script>
+                            window.onload = function() { window.print(); window.close(); }
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                printWindow.document.close();
+            };
+
+            const downloadReceiptImg = (order) => {
+                const isQris = paymentMethods.find(p => p.id === order.paymentMethod)?.type === 'qris';
+                
+                // Kalkulasi tinggi kanvas dinamis
+                let h = 320 + (order.items.length * 20);
+                if (settings.taxRate > 0) h += 20;
+                if (settings.serviceCharge > 0) h += 20;
+                if (isQris) h += 220; // Tambahan untuk QRIS code dan label
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 400;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                
+                // Background putih
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 16px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText(settings.restoName, canvas.width / 2, 30);
+
+                ctx.font = '12px Courier New';
+                ctx.fillText('Struk Pembayaran Resmi', canvas.width / 2, 50);
+
+                ctx.textAlign = 'left';
+                ctx.font = '12px Courier New';
+                let y = 80;
+                ctx.fillText(`ID Pesanan : ${order.id}`, 20, y); y += 20;
+                ctx.fillText(`Waktu      : ${new Date(order.time).toLocaleString('id-ID')}`, 20, y); y += 20;
+                ctx.fillText(`Meja/Tipe  : ${order.table} (${order.orderType})`, 20, y); y += 25;
+
+                ctx.beginPath();
+                ctx.setLineDash([4, 2]);
+                ctx.moveTo(20, y); ctx.lineTo(380, y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                y += 20;
+
+                order.items.forEach(i => {
+                    ctx.fillText(`${i.quantity}x ${i.name}`, 20, y);
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`Rp ${(i.price * i.quantity).toLocaleString('id-ID')}`, 380, y);
+                    ctx.textAlign = 'left';
+                    y += 20;
+                });
+
+                ctx.beginPath();
+                ctx.setLineDash([4, 2]);
+                ctx.moveTo(20, y); ctx.lineTo(380, y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                y += 20;
+
+                ctx.fillText(`Subtotal`, 20, y);
+                ctx.textAlign = 'right';
+                ctx.fillText(`Rp ${order.subtotal.toLocaleString('id-ID')}`, 380, y);
+                ctx.textAlign = 'left';
+                y += 20;
+
+                if(settings.taxRate > 0) {
+                    ctx.fillText(`Pajak (${settings.taxRate}%)`, 20, y);
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`Rp ${order.tax.toLocaleString('id-ID')}`, 380, y);
+                    ctx.textAlign = 'left';
+                    y += 20;
+                }
+
+                if(settings.serviceCharge > 0) {
+                    ctx.fillText(`Service (${settings.serviceCharge}%)`, 20, y);
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`Rp ${order.service.toLocaleString('id-ID')}`, 380, y);
+                    ctx.textAlign = 'left';
+                    y += 20;
+                }
+
+                ctx.beginPath();
+                ctx.setLineDash([4, 2]);
+                ctx.moveTo(20, y); ctx.lineTo(380, y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                y += 25;
+
+                ctx.font = 'bold 14px Courier New';
+                ctx.fillText(`TOTAL`, 20, y);
+                ctx.textAlign = 'right';
+                ctx.fillText(`Rp ${order.total.toLocaleString('id-ID')}`, 380, y);
+                ctx.textAlign = 'left';
+                y += 30;
+
+                const finishDownload = () => {
+                    ctx.font = '12px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Terima Kasih Atas Kunjungan Anda!', canvas.width / 2, y);
+
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = `Struk-${order.id}.png`;
+                    a.click();
+                };
+
+                // Generate QRIS code directly on canvas if applicable
+                if (isQris) {
+                    const dynQris = generateDynamicQris(settings.staticQris, Math.round(order.total));
+                    const tempDiv = document.createElement('div');
+                    // This generates a synchronous/local canvas, dodging CORS restrictions
+                    new QRCode(tempDiv, { text: dynQris, width: 150, height: 150 });
+                    
+                    setTimeout(() => {
+                        ctx.beginPath();
+                        ctx.setLineDash([4, 2]);
+                        ctx.moveTo(20, y); ctx.lineTo(380, y);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        y += 25;
+                        
+                        ctx.font = 'bold 14px Courier New';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('QRIS PEMBAYARAN', canvas.width / 2, y);
+                        y += 15;
+
+                        const qrCanvas = tempDiv.querySelector('canvas');
+                        if (qrCanvas) {
+                            ctx.drawImage(qrCanvas, (canvas.width - 150) / 2, y);
+                            y += 170;
+                        }
+                        finishDownload();
+                    }, 100);
+                } else {
+                    finishDownload();
+                }
+            };
+
+            const handleBackup = () => {
+                const data = { settings, paymentMethods, menuItems, orders, tables, staffUsers };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Backup-RestoQR-${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            const handleRestore = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        if (data.settings) setSettings(data.settings);
+                        if (data.paymentMethods) setPaymentMethods(data.paymentMethods);
+                        if (data.menuItems) setMenuItems(data.menuItems);
+                        if (data.orders) setOrders(data.orders);
+                        if (data.tables) setTables(data.tables);
+                        if (data.staffUsers) setStaffUsers(data.staffUsers);
+                        showCustomAlert('Restore Berhasil', 'Data sistem berhasil dipulihkan dari file backup.');
+                    } catch (error) {
+                        showCustomAlert('Restore Gagal', 'Format file backup tidak valid atau rusak.');
+                    }
+                    e.target.value = ''; // Reset file input
+                };
+                reader.readAsText(file);
+            };
+
+            return (
+                <div className="min-h-screen">
+                    {modalConfig.isOpen && (
+                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 glass-panel">
+                            <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center">
+                                <div className="w-16 h-16 bg-brand-100 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                </div>
+                                <h3 className="text-lg font-black text-zinc-800 mb-2">{modalConfig.title}</h3>
+                                <p className="text-zinc-600 text-sm mb-6">{modalConfig.message}</p>
+                                <div className="flex gap-3">
+                                    {modalConfig.onConfirm && (
+                                        <button onClick={() => { closeCustomAlert(); modalConfig.onConfirm(); }} className="flex-1 bg-brand-600 text-white font-bold py-3 rounded-xl hover:bg-brand-700 shadow-md">
+                                            Ya
+                                        </button>
+                                    )}
+                                    <button onClick={closeCustomAlert} className="flex-1 bg-zinc-200 text-zinc-800 font-bold py-3 rounded-xl hover:bg-zinc-300 shadow-md">
+                                        {modalConfig.onConfirm ? 'Batal' : 'OK'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {receiptOrder && (
+                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 glass-panel">
+                            <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl flex flex-col max-h-[90vh]">
+                                <div className="flex justify-between items-center mb-4 border-b border-zinc-100 pb-3">
+                                    <h3 className="text-lg font-black text-zinc-800">Struk Pembayaran</h3>
+                                    <button onClick={() => setReceiptOrder(null)} className="text-zinc-400 hover:text-zinc-600">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto space-y-3 font-mono text-xs bg-zinc-50 p-4 rounded-2xl border border-zinc-200 text-zinc-700">
+                                    <div className="text-center font-bold text-sm text-zinc-900">{settings.restoName}</div>
+                                    <div className="text-center text-[10px] text-zinc-500">Struk Transaksi Resmi</div>
+                                    <div className="border-b border-dashed border-zinc-300 pb-2"></div>
+                                    <div>ID: {receiptOrder.id}</div>
+                                    <div>Waktu: {new Date(receiptOrder.time).toLocaleString('id-ID')}</div>
+                                    <div>Meja/Tipe: {receiptOrder.table} ({receiptOrder.orderType})</div>
+                                    <div className="border-b border-dashed border-zinc-300 pb-2"></div>
+                                    <div className="space-y-1">
+                                        {receiptOrder.items.map((item, idx) => (
+                                            <div key={idx} className="flex justify-between">
+                                                <span>{item.quantity}x {item.name}</span>
+                                                <span>Rp {(item.price * item.quantity).toLocaleString('id-ID')}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="border-b border-dashed border-zinc-300 pb-2"></div>
+                                    <div className="flex justify-between"><span>Subtotal:</span><span>Rp {receiptOrder.subtotal.toLocaleString('id-ID')}</span></div>
+                                    {settings.taxRate > 0 && <div className="flex justify-between"><span>Pajak ({settings.taxRate}%):</span><span>Rp {receiptOrder.tax.toLocaleString('id-ID')}</span></div>}
+                                    {settings.serviceCharge > 0 && <div className="flex justify-between"><span>Service ({settings.serviceCharge}%):</span><span>Rp {receiptOrder.service.toLocaleString('id-ID')}</span></div>}
+                                    <div className="border-b border-dashed border-zinc-300 pb-2"></div>
+                                    <div className="flex justify-between font-bold text-sm text-zinc-900"><span>TOTAL:</span><span className="text-brand-600">Rp {receiptOrder.total.toLocaleString('id-ID')}</span></div>
+                                    <div className="text-center pt-2 text-[10px]">Pembayaran: {paymentMethods.find(p=>p.id===receiptOrder.paymentMethod)?.name || receiptOrder.paymentMethod}</div>
+
+                                    {paymentMethods.find(p => p.id === receiptOrder.paymentMethod)?.type === 'qris' && (
+                                        <div className="pt-2 text-center">
+                                            <div className="border-b border-dashed border-zinc-300 pb-2 mb-2"></div>
+                                            <div className="font-bold mb-1">QRIS PEMBAYARAN</div>
+                                            <div className="w-28 h-28 bg-white p-1 mx-auto border rounded">
+                                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(generateDynamicQris(settings.staticQris, Math.round(receiptOrder.total)))}`} alt="QRIS" className="w-full h-full" />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 mt-4">
+                                    <button onClick={() => printReceipt(receiptOrder)} className="bg-brand-600 hover:bg-brand-700 text-white font-bold py-2.5 rounded-xl shadow-md text-sm flex flex-col items-center justify-center">
+                                        <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                                        <span>Cetak Struk</span>
+                                    </button>
+                                    <button onClick={() => downloadReceiptImg(receiptOrder)} className="bg-zinc-900 hover:bg-zinc-800 text-white font-bold py-2.5 rounded-xl shadow-md text-sm flex flex-col items-center justify-center">
+                                        <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                        <span>Simpan Gambar</span>
+                                    </button>
+                                </div>
+                                <button onClick={() => setReceiptOrder(null)} className="mt-3 w-full bg-zinc-200 text-zinc-800 font-bold py-3 rounded-xl text-sm hover:bg-zinc-300">
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'landing' && (
+                        <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-10">
+                                <svg className="absolute w-96 h-96 -top-10 -left-10 text-white transform rotate-12" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                            </div>
+
+                            <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 z-10 text-center">
+                                <div className="w-20 h-20 bg-brand-100 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                                </div>
+                                <h1 className="text-3xl font-black text-zinc-800 mb-2">{settings.restoName}</h1>
+                                <p className="text-zinc-500 mb-6">Selamat datang! Silakan pilih tipe pesanan & meja Anda.</p>
+                                
+                                <form onSubmit={handleCustomerLogin} className="space-y-4 text-left">
+                                    <div>
+                                        <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 block">Tipe Pesanan</label>
+                                        <div className="flex bg-zinc-100 p-1.5 rounded-xl border border-zinc-200">
+                                            <button type="button" onClick={() => setCustomerOrderType('dine-in')} className={`flex-1 flex items-center justify-center space-x-2 py-2.5 text-sm font-bold rounded-lg transition-all ${customerOrderType === 'dine-in' ? 'bg-white shadow-sm text-brand-600' : 'text-zinc-500 hover:text-zinc-700'}`}>
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                                                <span>Makan di Tempat</span>
+                                            </button>
+                                            <button type="button" onClick={() => setCustomerOrderType('takeaway')} className={`flex-1 flex items-center justify-center space-x-2 py-2.5 text-sm font-bold rounded-lg transition-all ${customerOrderType === 'takeaway' ? 'bg-white shadow-sm text-brand-600' : 'text-zinc-500 hover:text-zinc-700'}`}>
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+                                                <span>Bawa Pulang</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {customerOrderType === 'dine-in' && (
+                                        <div>
+                                            <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 block">Nomor Meja</label>
+                                            <input type="text" placeholder="Contoh: 12, VIP-1" required={customerOrderType === 'dine-in'} value={customerTable} onChange={(e) => setCustomerTable(e.target.value)} className="w-full px-5 py-4 bg-zinc-50 border border-zinc-200 rounded-xl text-center text-lg font-bold focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 transition-all uppercase" />
+                                        </div>
+                                    )}
+
+                                    <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-brand-500/30 transition-all transform hover:scale-[1.02] mt-2">
+                                        Lihat Menu & Pesan
+                                    </button>
+                                </form>
+
+                                <div className="mt-8 pt-6 border-t border-zinc-100">
+                                    <button onClick={() => setView('admin_login')} className="text-sm font-medium text-zinc-400 hover:text-brand-600 transition-colors">
+                                        Masuk sebagai Admin / Kasir
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'admin_login' && (
+                        <div className="min-h-screen bg-zinc-900 flex flex-col items-center justify-center p-6">
+                            <div className="w-full max-w-sm bg-zinc-800 rounded-3xl p-8 border border-zinc-700 shadow-2xl">
+                                <div className="w-14 h-14 bg-brand-600/20 text-brand-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                </div>
+                                <h2 className="text-2xl font-bold text-white mb-2 text-center">Login Staff</h2>
+                                <p className="text-xs text-zinc-400 text-center mb-6">Masukkan username dan PIN kasir/admin.</p>
+                                
+                                <form onSubmit={handleLoginSubmit} className="space-y-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1 block">Username</label>
+                                        <input type="text" required placeholder="Contoh: admin atau kasir1" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-medium focus:outline-none focus:border-brand-500" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1 block">PIN (4 digit)</label>
+                                        <input type="password" maxLength="4" required placeholder="••••" value={loginForm.pin} onChange={(e) => setLoginForm({...loginForm, pin: e.target.value})} className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-medium text-center tracking-widest focus:outline-none focus:border-brand-500" />
+                                    </div>
+                                    <button type="submit" className="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-brand-600/30 mt-2">
+                                        Masuk Dashboard
+                                    </button>
+                                </form>
+
+                                <button onClick={() => setView('landing')} className="w-full mt-4 bg-transparent border border-zinc-700 text-zinc-400 font-bold py-3 rounded-xl hover:bg-zinc-700 hover:text-white transition-all">
+                                    Kembali
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'customer' && (
+                        activeOrder ? (
+                            <div className="min-h-screen flex flex-col items-center justify-center p-6">
+                                <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 text-center">
+                                    <div className="w-24 h-24 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-white shadow-lg">
+                                        <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    </div>
+                                    <h2 className="text-2xl font-black text-zinc-800 mb-2">Menunggu Verifikasi Kasir</h2>
+                                    <p className="text-zinc-500 mb-6">{activeOrder.orderType === 'takeaway' ? 'Tipe: Bawa Pulang (Takeaway)' : `Meja: ${activeOrder.table}`} • ID: {activeOrder.id}</p>
+                                    
+                                    <div className="bg-zinc-50 rounded-2xl p-4 mb-6 text-left">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <span className="text-sm font-medium text-zinc-500">Status</span>
+                                            <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-yellow-100 text-yellow-700">
+                                                Menunggu Verifikasi
+                                            </span>
+                                        </div>
+                                        <div className="space-y-2 border-t border-zinc-200 pt-4">
+                                            {activeOrder.items.map(item => (
+                                                <div key={item.id} className="flex justify-between text-sm">
+                                                    <span className="text-zinc-700">{item.quantity}x {item.name}</span>
+                                                    <span className="font-medium">Rp {(item.price * item.quantity).toLocaleString('id-ID')}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="mt-4 pt-4 border-t border-zinc-200 flex justify-between font-black text-lg">
+                                            <span>Total</span>
+                                            <span className="text-brand-600">Rp {activeOrder.total.toLocaleString('id-ID')}</span>
+                                        </div>
+                                    </div>
+
+                                    <button onClick={() => setReceiptOrder(activeOrder)} className="w-full bg-brand-50 text-brand-700 font-bold py-3.5 rounded-xl mb-3 hover:bg-brand-100 shadow-sm flex items-center justify-center space-x-2 transition-colors">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                        <span>Lihat / Cetak Struk</span>
+                                    </button>
+
+                                    <button onClick={() => { setActiveOrder(null); setView('landing'); }} className="w-full bg-zinc-900 text-white font-bold py-3.5 rounded-xl hover:bg-zinc-800 transition-colors">
+                                        Tutup & Kembali
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="min-h-screen pb-24 font-sans">
+                                <header className="bg-white px-5 py-4 shadow-sm sticky top-0 z-20 flex justify-between items-center">
+                                    <div>
+                                        <h1 className="text-lg font-black text-zinc-800">{settings.restoName}</h1>
+                                        <p className="text-xs text-brand-600 font-bold bg-brand-50 inline-block px-2 py-0.5 rounded-md mt-1">
+                                            {customerOrderType === 'takeaway' ? 'Bawa Pulang' : `Meja: ${customerTable}`}
+                                        </p>
+                                    </div>
+                                    <button onClick={() => setView('landing')} className="text-zinc-400 hover:text-zinc-600">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                                    </button>
+                                </header>
+
+                                <div className="bg-white px-4 py-3 shadow-sm border-t border-zinc-100 sticky top-[68px] z-10">
+                                    <div className="flex space-x-2 overflow-x-auto hide-scrollbar">
+                                        {categories.map(cat => (
+                                            <button key={cat.id} onClick={() => setCustomerActiveCat(cat.id)} className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${customerActiveCat === cat.id ? 'bg-brand-600 text-white shadow-md' : 'bg-zinc-100 text-zinc-600'}`}>
+                                                {cat.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                    {menuItems.filter(item => customerActiveCat === 'Semua' || item.category === customerActiveCat).map(item => {
+                                        const cartItem = customerCart.find(i => i.id === item.id);
+                                        return (
+                                            <div key={item.id} className="bg-white rounded-2xl p-3 shadow-sm border border-zinc-100 flex flex-col">
+                                                <div className="relative aspect-square rounded-xl overflow-hidden mb-3">
+                                                    <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => { e.target.src = `https://placehold.co/300x300/f4f4f5/a1a1aa?text=${encodeURIComponent(item.name)}`; }} />
+                                                </div>
+                                                <div className="flex-1 flex flex-col">
+                                                    <h3 className="font-bold text-sm text-zinc-800 leading-tight mb-1">{item.name}</h3>
+                                                    <p className="text-xs text-zinc-500 line-clamp-2 mb-2">{item.description}</p>
+                                                    <div className="mt-auto flex items-center justify-between">
+                                                        <span className="font-black text-brand-600 text-sm">Rp {item.price.toLocaleString('id-ID')}</span>
+                                                        {cartItem ? (
+                                                            <div className="flex items-center space-x-2 bg-brand-50 rounded-lg p-1">
+                                                                <button onClick={() => updateCustomerQuantity(item.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white rounded text-brand-600 font-bold shadow-sm">-</button>
+                                                                <span className="text-xs font-bold w-3 text-center">{cartItem.quantity}</span>
+                                                                <button onClick={() => updateCustomerQuantity(item.id, 1)} className="w-6 h-6 flex items-center justify-center bg-brand-600 rounded text-white font-bold shadow-sm">+</button>
+                                                            </div>
+                                                        ) : (
+                                                            <button onClick={() => addToCustomerCart(item)} className="bg-zinc-900 text-white p-1.5 rounded-lg hover:bg-brand-600 transition-colors">
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {customerCart.length > 0 && !showCart && (
+                                    <div className="fixed bottom-6 left-0 right-0 px-4 z-30 animate-bounce">
+                                        <button onClick={() => setShowCart(true)} className="w-full bg-brand-600 text-white rounded-2xl p-4 shadow-xl shadow-brand-500/40 flex justify-between items-center font-bold">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="bg-white/20 px-3 py-1 rounded-full">{customerCart.reduce((s,i)=>s+i.quantity,0)} Item</div>
+                                                <span>Lihat Keranjang</span>
+                                            </div>
+                                            <span>Rp {calculateTotal(customerCart).toLocaleString('id-ID')}</span>
+                                        </button>
+                                    </div>
+                                )}
+
+                                {showCart && (
+                                    <div className="fixed inset-0 bg-black/60 z-50 flex flex-col justify-end glass-panel">
+                                        <div className="bg-white w-full rounded-t-3xl h-[85vh] flex flex-col">
+                                            <div className="p-4 border-b border-zinc-100 flex justify-between items-center sticky top-0 bg-white rounded-t-3xl z-10">
+                                                <h2 className="font-black text-lg">Keranjang Pesanan</h2>
+                                                <button onClick={() => setShowCart(false)} className="bg-zinc-100 p-2 rounded-full text-zinc-500 hover:bg-zinc-200">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                </button>
+                                            </div>
+                                            
+                                            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                                                <div className="space-y-4">
+                                                    {customerCart.map(item => (
+                                                        <div key={item.id} className="flex gap-3">
+                                                            <div className="w-16 h-16 rounded-xl bg-zinc-100 overflow-hidden">
+                                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                                                            </div>
+                                                            <div className="flex-1 flex flex-col justify-between">
+                                                                <h4 className="font-bold text-sm text-zinc-800">{item.name}</h4>
+                                                                <p className="text-brand-600 font-bold text-sm">Rp {(item.price * item.quantity).toLocaleString('id-ID')}</p>
+                                                            </div>
+                                                            <div className="flex items-center space-x-2 bg-zinc-50 rounded-lg p-1 h-fit border border-zinc-200">
+                                                                <button onClick={() => updateCustomerQuantity(item.id, -1)} className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-zinc-600 font-bold shadow-sm">-</button>
+                                                                <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
+                                                                <button onClick={() => updateCustomerQuantity(item.id, 1)} className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-zinc-600 font-bold shadow-sm">+</button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 block">Catatan Pesanan</label>
+                                                    <textarea rows="2" placeholder="Contoh: Pedas, jangan pakai bawang..." value={checkoutData.notes} onChange={(e) => setCheckoutData({...checkoutData, notes: e.target.value})} className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:border-brand-500"></textarea>
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 block">Metode Pembayaran</label>
+                                                    <div className="space-y-2">
+                                                        {paymentMethods.filter(pm => pm.isActive).map(pm => (
+                                                            <label key={pm.id} className={`flex items-center p-4 border rounded-xl cursor-pointer transition-all ${checkoutData.paymentMethod === pm.id ? 'border-brand-500 bg-brand-50' : 'border-zinc-200 hover:bg-zinc-50'}`}>
+                                                                <input type="radio" name="payment" value={pm.id} checked={checkoutData.paymentMethod === pm.id} onChange={(e) => setCheckoutData({...checkoutData, paymentMethod: e.target.value})} className="hidden" />
+                                                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mr-3 ${checkoutData.paymentMethod === pm.id ? 'border-brand-600' : 'border-zinc-300'}`}>
+                                                                    {checkoutData.paymentMethod === pm.id && <div className="w-2.5 h-2.5 bg-brand-600 rounded-full"></div>}
+                                                                </div>
+                                                                <span className="font-semibold text-sm text-zinc-800">{pm.name}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+
+                                                    {checkoutData.paymentMethod && paymentMethods.find(p => p.id === checkoutData.paymentMethod)?.type === 'qris' && (
+                                                        <div className="mt-4 p-4 bg-brand-50 rounded-2xl text-center border border-brand-200">
+                                                            <p className="font-bold text-sm text-brand-800 mb-2">Scan QRIS Dinamis (Pembayaran Langsung)</p>
+                                                            <div className="w-40 h-40 bg-white p-2 mx-auto rounded-xl shadow-sm border flex items-center justify-center">
+                                                                {(() => {
+                                                                    const totalAmt = calculateTotal(customerCart);
+                                                                    const dynQris = generateDynamicQris(settings.staticQris, Math.round(totalAmt));
+                                                                    return (
+                                                                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(dynQris)}`} alt="QRIS Dinamis" className="w-full h-full" />
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                            <p className="text-xs text-brand-600 font-semibold mt-2">Total Tagihan: Rp {calculateTotal(customerCart).toLocaleString('id-ID')}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="bg-zinc-50 p-4 rounded-xl space-y-2 text-sm border border-zinc-100">
+                                                    <div className="flex justify-between text-zinc-500">
+                                                        <span>Subtotal</span>
+                                                        <span className="font-semibold text-zinc-800">Rp {calculateSubtotal(customerCart).toLocaleString('id-ID')}</span>
+                                                    </div>
+                                                    {settings.taxRate > 0 && (
+                                                        <div className="flex justify-between text-zinc-500">
+                                                            <span>Pajak ({settings.taxRate}%)</span>
+                                                            <span className="font-semibold text-zinc-800">Rp {calculateTax(calculateSubtotal(customerCart)).toLocaleString('id-ID')}</span>
+                                                        </div>
+                                                    )}
+                                                    {settings.serviceCharge > 0 && (
+                                                        <div className="flex justify-between text-zinc-500">
+                                                            <span>Service Charge ({settings.serviceCharge}%)</span>
+                                                            <span className="font-semibold text-zinc-800">Rp {calculateService(calculateSubtotal(customerCart)).toLocaleString('id-ID')}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex justify-between text-lg font-black text-zinc-900 pt-2 border-t border-zinc-200 mt-2">
+                                                        <span>Total</span>
+                                                        <span className="text-brand-600">Rp {calculateTotal(customerCart).toLocaleString('id-ID')}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="p-4 bg-white border-t border-zinc-100 pb-8">
+                                                <button onClick={handleCustomerCheckout} disabled={!checkoutData.paymentMethod} className={`w-full py-4 rounded-xl font-bold transition-all shadow-lg ${checkoutData.paymentMethod ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-brand-500/30' : 'bg-zinc-200 text-zinc-400'}`}>
+                                                    Kirim Pesanan (Verifikasi Kasir)
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    )}
+
+                    {view === 'admin' && (
+                        <div className="min-h-screen flex flex-col md:flex-row font-sans">
+                            <aside className="w-full md:w-64 bg-zinc-900 text-zinc-300 flex flex-col shadow-2xl z-20 md:h-screen">
+                                <div className="p-6">
+                                    <h2 className="text-xl font-black text-white">{settings.restoName}</h2>
+                                    <p className="text-xs text-brand-400 mt-1 uppercase tracking-widest font-bold">
+                                        {currentUser?.role === 'admin' ? 'Administrator' : 'Kasir Shift'}
+                                    </p>
+                                </div>
+                                <nav className="flex-1 px-4 py-2 space-y-2 flex flex-row md:flex-col overflow-x-auto hide-scrollbar">
+                                    {[
+                                        { id: 'pos', name: 'Kasir (POS)', icon: 'M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z', adminOnly: false },
+                                        { id: 'orders', name: 'Pesanan Masuk', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', adminOnly: false },
+                                        { id: 'menu', name: 'Katalog Menu', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253', adminOnly: true },
+                                        { id: 'tables', name: 'QR Meja', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z', adminOnly: true },
+                                        { id: 'staff', name: 'Manajemen Staff', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', adminOnly: true },
+                                        { id: 'settings', name: 'Pengaturan Resto', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z', adminOnly: true }
+                                    ].map(tab => {
+                                        const isLocked = tab.adminOnly && currentUser?.role !== 'admin';
+                                        return (
+                                            <button 
+                                                key={tab.id} 
+                                                onClick={() => {
+                                                    if (isLocked) {
+                                                        showCustomAlert('Akses Terbatas', 'Menu ini hanya dapat diatur oleh Administrator.');
+                                                    } else {
+                                                        setAdminTab(tab.id);
+                                                    }
+                                                }} 
+                                                className={`flex-shrink-0 flex items-center space-x-3 px-4 py-3 rounded-xl transition-all w-full text-left ${adminTab === tab.id ? 'bg-brand-600 text-white shadow-lg' : isLocked ? 'opacity-40 hover:bg-zinc-800' : 'hover:bg-zinc-800 hover:text-white'}`}
+                                            >
+                                                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} /></svg>
+                                                <span className="font-semibold text-sm flex-1">{tab.name}</span>
+                                                {isLocked && <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>}
+                                                {tab.id === 'orders' && orders.filter(o => o.status === 'unverified' || o.status === 'pending').length > 0 && (
+                                                    <span className="bg-yellow-500 text-black text-xs font-black px-2 py-0.5 rounded-full">
+                                                        {orders.filter(o => o.status === 'unverified' || o.status === 'pending').length}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </nav>
+                                <div className="p-4 border-t border-zinc-800">
+                                    <button onClick={handleLogout} className="flex items-center space-x-3 w-full px-4 py-3 rounded-xl hover:bg-zinc-800 hover:text-white transition-colors text-left text-sm font-medium text-zinc-400">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                                        <span>Keluar ({currentUser?.name})</span>
+                                    </button>
+                                </div>
+                            </aside>
+
+                            <main className="flex-1 flex flex-col h-screen overflow-hidden">
+                                <header className="bg-white px-6 py-4 border-b border-zinc-100 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+                                    <h2 className="text-xl font-bold text-zinc-800 capitalize">
+                                        {adminTab === 'pos' ? 'Kasir (Point of Sale)' : 
+                                         adminTab === 'orders' ? 'Pesanan Masuk & Verifikasi' : 
+                                         adminTab === 'menu' ? 'Katalog Menu' : 
+                                         adminTab === 'tables' ? 'Manajemen QR Meja' : 
+                                         adminTab === 'staff' ? 'Manajemen Staff & Kasir' : 'Pengaturan Sistem'}
+                                    </h2>
+                                    <div className="flex items-center space-x-3">
+                                        <div className="text-right hidden sm:block">
+                                            <p className="text-sm font-bold text-zinc-800">{currentUser?.name}</p>
+                                            <p className="text-xs text-brand-600 font-medium uppercase">{currentUser?.role}</p>
+                                        </div>
+                                        <div className="w-10 h-10 bg-brand-100 rounded-full flex items-center justify-center text-brand-600 font-bold border-2 border-brand-200">
+                                            {currentUser?.name.substring(0,2).toUpperCase()}
+                                        </div>
+                                    </div>
+                                </header>
+
+                                <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                                    {adminTab === 'pos' && (
+                                        <div className="flex flex-col lg:flex-row gap-6 h-full">
+                                            <div className="flex-1 flex flex-col bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
+                                                <div className="p-3 border-b border-zinc-100 bg-zinc-50 flex space-x-2 overflow-x-auto hide-scrollbar">
+                                                    {categories.map(cat => (
+                                                        <button key={cat.id} onClick={() => setPosActiveCat(cat.id)} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${posActiveCat === cat.id ? 'bg-zinc-800 text-white' : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'}`}>
+                                                            {cat.name}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 content-start">
+                                                    {menuItems.filter(item => posActiveCat === 'Semua' || item.category === posActiveCat).map(item => (
+                                                        <div key={item.id} onClick={() => addToPosCart(item)} className="bg-white border border-zinc-100 rounded-2xl p-2 cursor-pointer hover:border-brand-400 hover:shadow-md transition-all group flex flex-col h-full">
+                                                            <div className="relative aspect-square rounded-xl overflow-hidden mb-2 bg-zinc-100">
+                                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" onError={(e) => { e.target.src = `https://placehold.co/300x300/f4f4f5/a1a1aa?text=${encodeURIComponent(item.name)}`; }} />
+                                                            </div>
+                                                            <h3 className="font-bold text-xs text-zinc-800 line-clamp-2 leading-tight mb-1">{item.name}</h3>
+                                                            <p className="text-brand-600 font-black text-xs mt-auto">Rp {item.price.toLocaleString('id-ID')}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="w-full lg:w-96 flex flex-col bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden flex-shrink-0 h-full">
+                                                <div className="p-4 border-b border-zinc-100 bg-zinc-50"><h3 className="font-black text-lg text-zinc-800">Keranjang Kasir</h3></div>
+                                                
+                                                <div className="flex-1 overflow-y-auto p-4">
+                                                    {posCart.length === 0 ? (
+                                                        <div className="h-full flex flex-col items-center justify-center text-zinc-400">
+                                                            <p className="text-sm font-medium">Belum ada pesanan</p>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-3">
+                                                            {posCart.map(item => (
+                                                                <div key={item.id} className="flex gap-3 bg-zinc-50 p-2 rounded-xl">
+                                                                    <div className="flex-1">
+                                                                        <h4 className="text-sm font-bold text-zinc-800">{item.name}</h4>
+                                                                        <p className="text-xs text-brand-600 font-bold">Rp {(item.price * item.quantity).toLocaleString('id-ID')}</p>
+                                                                    </div>
+                                                                    <div className="flex items-center space-x-2 bg-white rounded-lg p-1 border border-zinc-200">
+                                                                        <button onClick={() => updatePosQuantity(item.id, -1)} className="w-6 h-6 flex items-center justify-center bg-zinc-100 rounded text-zinc-600 font-bold hover:text-brand-600">-</button>
+                                                                        <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
+                                                                        <button onClick={() => updatePosQuantity(item.id, 1)} className="w-6 h-6 flex items-center justify-center bg-zinc-100 rounded text-zinc-600 font-bold hover:text-brand-600">+</button>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="p-4 bg-zinc-50 border-t border-zinc-100">
+                                                    {posCart.length > 0 && (
+                                                        <div className="space-y-3 mb-4">
+                                                            <div className="space-y-1 text-xs">
+                                                                <div className="flex justify-between text-zinc-500"><span>Subtotal</span><span className="font-semibold text-zinc-800">Rp {calculateSubtotal(posCart).toLocaleString('id-ID')}</span></div>
+                                                                {settings.taxRate > 0 && <div className="flex justify-between text-zinc-500"><span>Pajak ({settings.taxRate}%)</span><span className="font-semibold text-zinc-800">Rp {calculateTax(calculateSubtotal(posCart)).toLocaleString('id-ID')}</span></div>}
+                                                                {settings.serviceCharge > 0 && <div className="flex justify-between text-zinc-500"><span>Service ({settings.serviceCharge}%)</span><span className="font-semibold text-zinc-800">Rp {calculateService(calculateSubtotal(posCart)).toLocaleString('id-ID')}</span></div>}
+                                                                <div className="flex justify-between text-lg font-black text-zinc-900 pt-2 border-t border-zinc-200 mt-2"><span>Total</span><span className="text-brand-600">Rp {calculateTotal(posCart).toLocaleString('id-ID')}</span></div>
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <input type="text" placeholder="Meja / Pemesan (Bisa kosong u/ Takeaway)" className="w-full px-3 py-2 rounded-lg border border-zinc-300 text-sm font-bold focus:border-brand-500 outline-none" value={posTableNo} onChange={(e) => setPosTableNo(e.target.value)} />
+                                                                <div className="flex gap-2">
+                                                                    <select value={posOrderType} onChange={(e) => setPosOrderType(e.target.value)} className="w-1/2 px-3 py-2 rounded-lg border border-zinc-300 text-sm font-bold focus:border-brand-500 outline-none bg-white">
+                                                                        <option value="dine-in">Makan di Tempat</option>
+                                                                        <option value="takeaway">Bawa Pulang</option>
+                                                                    </select>
+                                                                    <select value={posPaymentMethod} onChange={(e) => setPosPaymentMethod(e.target.value)} className="w-1/2 px-3 py-2 rounded-lg border border-zinc-300 text-sm font-bold focus:border-brand-500 outline-none bg-white">
+                                                                        <option value="">-- Pembayaran --</option>
+                                                                        {paymentMethods.filter(pm => pm.isActive).map(pm => (
+                                                                            <option key={pm.id} value={pm.id}>{pm.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    <button onClick={handlePosCheckout} disabled={posCart.length === 0 || !posPaymentMethod} className={`w-full py-3 rounded-xl font-bold transition-all shadow-md ${posCart.length > 0 && posPaymentMethod ? 'bg-brand-600 hover:bg-brand-500 text-white' : 'bg-zinc-200 text-zinc-400 cursor-not-allowed'}`}>
+                                                        Selesaikan Pembayaran & Struk
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {adminTab === 'orders' && (
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-zinc-200">
+                                                <div>
+                                                    <h3 className="font-bold text-zinc-800">Manajemen Pesanan Masuk & Pembayaran</h3>
+                                                    <p className="text-xs text-zinc-500">Pesanan dari QR Code pelanggan beserta konfirmasi pembayarannya langsung masuk untuk diverifikasi kasir.</p>
+                                                </div>
+                                                <div className="text-sm font-bold px-3 py-1 bg-brand-50 text-brand-600 rounded-lg">Total: {orders.length}</div>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                {orders.length === 0 ? (
+                                                    <div className="col-span-full py-12 text-center text-zinc-400">Belum ada pesanan masuk.</div>
+                                                ) : (
+                                                    orders.map((order, idx) => (
+                                                        <div key={idx} className={`bg-white p-5 rounded-2xl shadow-sm border-2 transition-all ${
+                                                            order.status === 'unverified' ? 'border-orange-400 shadow-orange-100 bg-orange-50/20' :
+                                                            order.status === 'pending' ? 'border-yellow-400 shadow-yellow-100' : 
+                                                            order.status === 'processing' ? 'border-blue-400' : 'border-zinc-200 opacity-70'
+                                                        }`}>
+                                                            <div className="flex justify-between items-start mb-4 border-b border-zinc-100 pb-3">
+                                                                <div>
+                                                                    <span className="text-xs font-bold text-zinc-500 block mb-1">{order.id} • Sumber: <b>{order.source}</b></span>
+                                                                    <span className="font-black text-lg text-zinc-800">Meja: {order.table}</span>
+                                                                    <span className={`ml-2 text-xs font-bold px-2 py-0.5 rounded-full ${order.orderType === 'takeaway' ? 'bg-purple-100 text-purple-700' : 'bg-zinc-100 text-zinc-600'}`}>{order.orderType === 'takeaway' ? 'Bawa Pulang' : 'Dine-in'}</span>
+                                                                </div>
+                                                                <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase ${
+                                                                    order.status === 'unverified' ? 'bg-orange-100 text-orange-700' :
+                                                                    order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                                                    order.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                                                                    'bg-green-100 text-green-700'
+                                                                }`}>
+                                                                    {order.status === 'unverified' ? 'Belum Verifikasi' : order.status}
+                                                                </span>
+                                                            </div>
+                                                            <div className="space-y-1 mb-4">
+                                                                {order.items.map((item, i) => (
+                                                                    <div key={i} className="flex justify-between text-sm">
+                                                                        <span className="font-medium text-zinc-700">{item.quantity}x {item.name}</span>
+                                                                        <span className="text-zinc-500 text-xs">Rp {(item.price * item.quantity).toLocaleString('id-ID')}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            {order.notes && (
+                                                                <div className="mb-4 p-2 bg-yellow-50 text-yellow-800 text-xs rounded-lg border border-yellow-200">
+                                                                    <b>Catatan:</b> {order.notes}
+                                                                </div>
+                                                            )}
+                                                            <div className="flex justify-between items-center pt-3 border-t border-zinc-100">
+                                                                <div className="text-sm">
+                                                                    <span className="block text-xs text-zinc-500">{paymentMethods.find(p=>p.id===order.paymentMethod)?.name || order.paymentMethod}</span>
+                                                                    <span className="font-black text-brand-600">Rp {order.total.toLocaleString('id-ID')}</span>
+                                                                </div>
+                                                                
+                                                                {order.status === 'unverified' && (
+                                                                    <div className="flex gap-2">
+                                                                        <button onClick={() => {
+                                                                            setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'pending' } : o));
+                                                                        }} className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-xs shadow-sm">
+                                                                            Verifikasi & Terima
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+
+                                                                {order.status !== 'unverified' && (
+                                                                    <div className="flex gap-2">
+                                                                        <button onClick={() => {
+                                                                            const newStatus = order.status === 'pending' ? 'processing' : 'completed';
+                                                                            setOrders(orders.map(o => o.id === order.id ? { ...o, status: newStatus } : o));
+                                                                            if (newStatus === 'completed') {
+                                                                                setReceiptOrder(order);
+                                                                            }
+                                                                        }} className={`px-3 py-2 rounded-lg font-bold text-xs text-white shadow-sm transition-all ${order.status === 'pending' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-green-500 hover:bg-green-600'}`}>
+                                                                            {order.status === 'pending' ? 'Proses Dapur' : 'Selesaikan & Struk'}
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {adminTab === 'menu' && (
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-zinc-200">
+                                                <div>
+                                                    <h3 className="font-bold text-zinc-800">Daftar Menu Restoran (5 Kolom)</h3>
+                                                    <p className="text-xs text-zinc-500">Khusus Admin: Tambah, ubah, atau hapus item menu.</p>
+                                                </div>
+                                                <button onClick={() => openMenuModal()} className="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-brand-700 shadow-md">
+                                                    + Tambah Menu
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                                {menuItems.map(item => (
+                                                    <div key={item.id} className="bg-white p-3 rounded-2xl shadow-sm border border-zinc-200 flex flex-col">
+                                                        <img src={item.image} alt={item.name} className="w-full h-32 object-cover rounded-xl mb-3 bg-zinc-100" />
+                                                        <div className="flex justify-between items-start mb-1">
+                                                            <h4 className="font-bold text-sm text-zinc-800 leading-tight">{item.name}</h4>
+                                                            <span className="text-xs bg-zinc-100 px-1.5 py-0.5 rounded text-zinc-500">{item.category}</span>
+                                                        </div>
+                                                        <p className="text-brand-600 font-black text-sm mb-3">Rp {item.price.toLocaleString('id-ID')}</p>
+                                                        <div className="mt-auto flex space-x-2 pt-3 border-t border-zinc-100">
+                                                            <button onClick={() => openMenuModal(item)} className="flex-1 bg-zinc-100 text-zinc-700 py-1.5 rounded-lg text-xs font-bold hover:bg-zinc-200">Edit</button>
+                                                            <button onClick={() => deleteMenu(item.id)} className="flex-1 bg-red-50 text-red-600 py-1.5 rounded-lg text-xs font-bold hover:bg-red-100">Hapus</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {showMenuModal && (
+                                                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 glass-panel">
+                                                    <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+                                                        <div className="p-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+                                                            <h3 className="font-black text-lg">{editingMenu ? 'Edit Menu' : 'Tambah Menu Baru'}</h3>
+                                                            <button onClick={() => setShowMenuModal(false)} className="text-zinc-400 hover:text-zinc-600">
+                                                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            </button>
+                                                        </div>
+                                                        <form onSubmit={saveMenu} className="p-5 space-y-4">
+                                                            <div><label className="text-xs font-bold text-zinc-500 uppercase">Nama Menu</label><input type="text" required value={menuForm.name} onChange={e => setMenuForm({...menuForm, name: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium" /></div>
+                                                            <div className="flex gap-4">
+                                                                <div className="flex-1"><label className="text-xs font-bold text-zinc-500 uppercase">Harga (Rp)</label><input type="number" required value={menuForm.price} onChange={e => setMenuForm({...menuForm, price: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium" /></div>
+                                                                <div className="flex-1"><label className="text-xs font-bold text-zinc-500 uppercase">Kategori</label><select value={menuForm.category} onChange={e => setMenuForm({...menuForm, category: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium bg-white">{categories.filter(c => c.id !== 'Semua').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                                                            </div>
+                                                            <div><label className="text-xs font-bold text-zinc-500 uppercase">URL Gambar</label><input type="url" required value={menuForm.image} onChange={e => setMenuForm({...menuForm, image: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium" /></div>
+                                                            <div><label className="text-xs font-bold text-zinc-500 uppercase">Deskripsi</label><textarea rows="2" value={menuForm.description} onChange={e => setMenuForm({...menuForm, description: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium"></textarea></div>
+                                                            <button type="submit" className="w-full bg-brand-600 text-white font-bold py-3 rounded-xl hover:bg-brand-700 mt-2 shadow-md">Simpan Menu</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {adminTab === 'tables' && (
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-zinc-200">
+                                                <div>
+                                                    <h3 className="font-bold text-zinc-800">Manajemen Meja & QR Code (4 Kolom)</h3>
+                                                    <p className="text-xs text-zinc-500">Khusus Admin: Buat dan cetak QR Meja pelanggan.</p>
+                                                </div>
+                                                <button onClick={addTable} className="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-brand-700 shadow-md">
+                                                    + Tambah Meja
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                                {tables.map(table => (
+                                                    <div key={table.id} className="bg-white p-5 rounded-2xl shadow-sm border border-zinc-200 flex flex-col items-center text-center">
+                                                        <h4 className="font-black text-xl text-zinc-800 mb-1">{table.name}</h4>
+                                                        <p className="text-xs text-zinc-400 mb-4 break-all bg-zinc-50 p-2 rounded-lg border border-zinc-100">{table.link}</p>
+                                                        <div className="w-32 h-32 bg-white p-2 border border-zinc-200 rounded-xl mb-4 shadow-sm">
+                                                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(table.link)}`} alt={`QR ${table.name}`} className="w-full h-full" />
+                                                        </div>
+                                                        <div className="flex gap-2 w-full mt-auto">
+                                                            <button onClick={() => printQR(table)} className="flex-1 bg-zinc-900 text-white py-2 rounded-lg text-sm font-bold hover:bg-zinc-800">Cetak QR</button>
+                                                            <button onClick={() => deleteTable(table.id)} className="px-3 bg-red-50 text-red-600 rounded-lg text-sm font-bold hover:bg-red-100">Hapus</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {adminTab === 'staff' && (
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-zinc-200">
+                                                <div>
+                                                    <h3 className="font-bold text-zinc-800">Manajemen Akun Staff & Kasir (5 Kolom)</h3>
+                                                    <p className="text-xs text-zinc-500">Khusus Admin: Tambah, ubah, atau hapus akun kasir dan PIN login.</p>
+                                                </div>
+                                                <button onClick={() => openStaffModal()} className="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-brand-700 shadow-md">
+                                                    + Tambah Staff
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                                {staffUsers.map(staff => (
+                                                    <div key={staff.id} className="bg-white p-5 rounded-2xl shadow-sm border border-zinc-200 flex flex-col">
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div>
+                                                                <h4 className="font-bold text-base text-zinc-800">{staff.name}</h4>
+                                                                <p className="text-xs text-zinc-500">@{staff.username}</p>
+                                                            </div>
+                                                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase ${staff.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                {staff.role}
+                                                            </span>
+                                                        </div>
+                                                        <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-100 text-xs text-zinc-600 mb-4 flex justify-between items-center">
+                                                            <span>PIN Akses: <b className="tracking-widest font-mono text-zinc-800">{staff.pin}</b></span>
+                                                        </div>
+                                                        <div className="mt-auto pt-3 border-t border-zinc-100 flex gap-2">
+                                                            <button onClick={() => openStaffModal(staff)} className="flex-1 py-1.5 bg-zinc-100 text-zinc-700 rounded-lg text-xs font-bold hover:bg-zinc-200">
+                                                                Edit
+                                                            </button>
+                                                            <button onClick={() => deleteStaff(staff.id)} className="flex-1 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100">
+                                                                Hapus
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {showStaffModal && (
+                                                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 glass-panel">
+                                                    <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden">
+                                                        <div className="p-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+                                                            <h3 className="font-black text-lg">{editingStaff ? 'Edit Akun Staff' : 'Tambah Staff Baru'}</h3>
+                                                            <button onClick={() => setShowStaffModal(false)} className="text-zinc-400 hover:text-zinc-600">
+                                                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            </button>
+                                                        </div>
+                                                        <form onSubmit={saveStaff} className="p-5 space-y-4">
+                                                            <div><label className="text-xs font-bold text-zinc-500 uppercase">Nama Lengkap</label><input type="text" required value={staffForm.name} onChange={e => setStaffForm({...staffForm, name: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium" /></div>
+                                                            <div><label className="text-xs font-bold text-zinc-500 uppercase">Username Login</label><input type="text" required value={staffForm.username} onChange={e => setStaffForm({...staffForm, username: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium" /></div>
+                                                            <div><label className="text-xs font-bold text-zinc-500 uppercase">PIN (Contoh: 1234)</label><input type="text" maxLength="4" required value={staffForm.pin} onChange={e => setStaffForm({...staffForm, pin: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium tracking-widest font-mono" /></div>
+                                                            <div>
+                                                                <label className="text-xs font-bold text-zinc-500 uppercase">Peran / Role</label>
+                                                                <select value={staffForm.role} onChange={e => setStaffForm({...staffForm, role: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium bg-white">
+                                                                    <option value="cashier">Kasir</option>
+                                                                    <option value="admin">Administrator</option>
+                                                                </select>
+                                                            </div>
+                                                            <button type="submit" className="w-full bg-brand-600 text-white font-bold py-3 rounded-xl hover:bg-brand-700 mt-2 shadow-md">Simpan Akun</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {adminTab === 'settings' && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                                            <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-200">
+                                                <h3 className="font-black text-lg text-zinc-800 mb-4 border-b border-zinc-100 pb-2">Informasi Resto & Biaya</h3>
+                                                <div className="space-y-4">
+                                                    <div><label className="text-xs font-bold text-zinc-500 uppercase">Nama Restoran / Cafe</label><input type="text" value={settings.restoName} onChange={e => setSettings({...settings, restoName: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none font-bold" /></div>
+                                                    <div className="flex gap-4">
+                                                        <div className="flex-1"><label className="text-xs font-bold text-zinc-500 uppercase">Pajak PPN (%)</label><input type="number" value={settings.taxRate} onChange={e => setSettings({...settings, taxRate: Number(e.target.value)})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none font-bold" /></div>
+                                                        <div className="flex-1"><label className="text-xs font-bold text-zinc-500 uppercase">Service Charge (%)</label><input type="number" value={settings.serviceCharge} onChange={e => setSettings({...settings, serviceCharge: Number(e.target.value)})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none font-bold" /></div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-bold text-zinc-500 uppercase">String QRIS Statis Utama</label>
+                                                        <textarea rows="3" value={settings.staticQris} onChange={e => setSettings({...settings, staticQris: e.target.value})} className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-xs font-mono"></textarea>
+                                                        <p className="text-xs text-zinc-400 mt-1">String QRIS statis akan dikonversi secara otomatis menjadi QRIS dinamis (dengan tag 54 nominal tagihan dan CRC-16).</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-200">
+                                                <div className="flex justify-between items-center mb-4 border-b border-zinc-100 pb-2">
+                                                    <h3 className="font-black text-lg text-zinc-800">Tampilan Aplikasi</h3>
+                                                </div>
+
+                                                <div className="mb-5">
+                                                    <label className="text-xs font-bold text-zinc-500 uppercase">Warna Tema / Aksen Utama</label>
+                                                    <div className="flex gap-3 mt-2">
+                                                        {[
+                                                            { id: 'red', name: 'Merah (Default)', color: 'bg-[#cb262d]' },
+                                                            { id: 'blue', name: 'Biru', color: 'bg-[#2563eb]' },
+                                                            { id: 'green', name: 'Hijau', color: 'bg-[#16a34a]' },
+                                                            { id: 'purple', name: 'Ungu', color: 'bg-[#9333ea]' },
+                                                            { id: 'orange', name: 'Oranye', color: 'bg-[#ea580c]' },
+                                                            { id: 'dark', name: 'Monokrom / Gelap', color: 'bg-[#52525b]' }
+                                                        ].map(theme => (
+                                                            <button 
+                                                                key={theme.id}
+                                                                onClick={() => setSettings({...settings, themeColor: theme.id})}
+                                                                className={`w-10 h-10 rounded-full ${theme.color} shadow-sm border-2 flex items-center justify-center transition-all ${settings.themeColor === theme.id ? 'border-zinc-900 scale-110' : 'border-transparent hover:scale-105 opacity-80 hover:opacity-100'}`}
+                                                                title={theme.name}
+                                                            >
+                                                                {settings.themeColor === theme.id && <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-zinc-500 uppercase">Latar Belakang (Warna Hex atau URL Gambar)</label>
+                                                    <input type="text" value={settings.appBackground || ''} onChange={e => setSettings({...settings, appBackground: e.target.value})} placeholder="Contoh: #f4f4f5 atau https://..." className="w-full mt-1 p-3 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-sm font-medium" />
+                                                    <p className="text-xs text-zinc-400 mt-2">Masukkan kode warna (misal: <b className="text-zinc-600">#f4f4f5</b>, <b className="text-zinc-600">white</b>) atau link gambar URL untuk mengubah latar belakang aplikasi secara keseluruhan.</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-200">
+                                                <div className="flex justify-between items-center mb-4 border-b border-zinc-100 pb-2">
+                                                    <h3 className="font-black text-lg text-zinc-800">Metode Pembayaran Aktif</h3>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    {paymentMethods.map(pm => (
+                                                        <div key={pm.id} className={`flex items-center justify-between p-4 rounded-xl border ${pm.isActive ? 'border-brand-200 bg-brand-50/30' : 'border-zinc-200 bg-zinc-50 opacity-60'}`}>
+                                                            <div>
+                                                                <h4 className="font-bold text-zinc-800">{pm.name}</h4>
+                                                            <p className="text-xs font-medium text-zinc-500 uppercase mt-0.5">Tipe: {pm.type}</p>
+                                                            </div>
+                                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                            <input type="checkbox" className="sr-only peer" checked={pm.isActive} onChange={() => {
+                                                                setPaymentMethods(paymentMethods.map(p => p.id === pm.id ? { ...p, isActive: !p.isActive } : p));
+                                                            }} />
+                                                            <div className="w-11 h-6 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                                                        </label>
+                                                    </div>
+                                                ))}
+                                                <p className="text-xs text-zinc-500 italic pt-2">*Metode yang dinonaktifkan tidak akan muncul di halaman checkout pelanggan maupun kasir.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-200">
+                                            <div className="flex justify-between items-center mb-4 border-b border-zinc-100 pb-2">
+                                                <h3 className="font-black text-lg text-zinc-800">Manajemen Data (Backup)</h3>
+                                            </div>
+                                            <div className="space-y-4">
+                                                <div className="bg-green-50 text-green-700 p-3 rounded-xl border border-green-200 flex items-start space-x-3 text-sm">
+                                                    <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                    <div>
+                                                        <p className="font-bold">Auto-Save Aktif</p>
+                                                        <p className="text-xs opacity-80 mt-1">Data secara otomatis tersimpan secara real-time di memori perangkat (Local Storage). Gunakan fitur backup ini secara rutin untuk mencegah data hilang jika history browser dibersihkan.</p>
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <button onClick={handleBackup} className="flex flex-col items-center justify-center p-4 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-xl border border-brand-200 transition-colors">
+                                                        <svg className="w-6 h-6 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                                        <span className="font-bold text-sm">Download Backup</span>
+                                                    </button>
+                                                    <label className="flex flex-col items-center justify-center p-4 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 rounded-xl border border-zinc-200 transition-colors cursor-pointer">
+                                                        <svg className="w-6 h-6 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                        <span className="font-bold text-sm">Restore Data</span>
+                                                        <input type="file" accept=".json" onChange={handleRestore} className="hidden" />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </main>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

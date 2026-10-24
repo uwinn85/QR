@@ -145,8 +145,19 @@
         ];
 
         const getFallbackImage = (name) => {
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect fill="#e4e4e7" width="300" height="300"/><text fill="#71717a" font-family="sans-serif" font-size="20" font-weight="bold" x="50%" y="50%" dominant-baseline="middle" text-anchor="middle">${name}</text></svg>`;
-            return `data:image/svg+xml;base64,${btoa(svg)}`;
+            const safeName = String(name || '').replace(/[<>&"']/g, (character) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[character]);
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect fill="#e4e4e7" width="300" height="300"/><text fill="#71717a" font-family="sans-serif" font-size="20" font-weight="bold" x="50%" y="50%" dominant-baseline="middle" text-anchor="middle">${safeName}</text></svg>`;
+            return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+        };
+
+        const loadStoredValue = (key, fallback) => {
+            try {
+                const stored = localStorage.getItem(key);
+                return stored === null ? fallback : JSON.parse(stored);
+            } catch (error) {
+                console.warn(`[v0] Data tersimpan tidak valid untuk ${key}, memakai nilai default.`, error);
+                return fallback;
+            }
         };
 
         const QRCodeCanvas = ({ text, width = 150, height = 150 }) => {
@@ -222,7 +233,7 @@
             }
 
             const amountStr = Math.round(amount).toString();
-            const tag54Val = '54' + (amountStr.length < 10 ? '0' + amountStr.length : amountStr.length) + amountStr;
+            const tag54Val = '54' + String(amountStr.length).padStart(2, '0') + amountStr;
 
             const idx58 = cleanQris.indexOf('5802ID');
             const idx59 = cleanQris.indexOf('59');
@@ -306,23 +317,15 @@
                 window.addEventListener('offline', handleOffline);
                 window.addEventListener('online', handleOnline);
 
-                const sSettings = localStorage.getItem('qrResto_settings');
-                if (sSettings) setSettings(JSON.parse(sSettings));
-                
-                const sPayments = localStorage.getItem('qrResto_payments');
-                if (sPayments) setPaymentMethods(JSON.parse(sPayments));
-
-                const sMenu = localStorage.getItem('qrResto_menu');
-                if (sMenu) setMenuItems(JSON.parse(sMenu));
-
-                const sOrders = localStorage.getItem('qrResto_orders');
-                if (sOrders) setOrders(JSON.parse(sOrders));
-
-                const sTables = localStorage.getItem('qrResto_tables');
-                if (sTables) setTables(JSON.parse(sTables));
-
-                const sStaff = localStorage.getItem('qrResto_staff');
-                if (sStaff) setStaffUsers(JSON.parse(sStaff));
+                setSettings(loadStoredValue('qrResto_settings', DEFAULT_SETTINGS));
+                setPaymentMethods(loadStoredValue('qrResto_payments', DEFAULT_PAYMENT_METHODS));
+                setMenuItems(loadStoredValue('qrResto_menu', DEFAULT_MENU));
+                setOrders(loadStoredValue('qrResto_orders', []));
+                setTables(loadStoredValue('qrResto_tables', [
+                    { id: 'T1', name: 'Meja 1', link: window.location.origin + window.location.pathname + '?table=1' },
+                    { id: 'T2', name: 'Meja 2', link: window.location.origin + window.location.pathname + '?table=2' }
+                ]));
+                setStaffUsers(loadStoredValue('qrResto_staff', DEFAULT_USERS));
 
                 const urlParams = new URLSearchParams(window.location.search);
                 const tableParam = urlParams.get('table');

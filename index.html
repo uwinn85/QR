@@ -69,7 +69,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
 
         const DEFAULT_SETTINGS = {
             restoName: "Nusantara Resto",
@@ -126,6 +126,29 @@
             { id: 2, username: 'kasir1', pin: '1111', role: 'cashier', name: 'Kasir Shift 1' },
             { id: 3, username: 'kasir2', pin: '2222', role: 'cashier', name: 'Kasir Shift 2' },
         ];
+
+        const getFallbackImage = (name) => {
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect fill="#e4e4e7" width="300" height="300"/><text fill="#71717a" font-family="sans-serif" font-size="20" font-weight="bold" x="50%" y="50%" dominant-baseline="middle" text-anchor="middle">${name}</text></svg>`;
+            return `data:image/svg+xml;base64,${btoa(svg)}`;
+        };
+
+        const QRCodeCanvas = ({ text, width = 150, height = 150 }) => {
+            const qrRef = useRef(null);
+            useEffect(() => {
+                if (qrRef.current && text) {
+                    qrRef.current.innerHTML = '';
+                    new QRCode(qrRef.current, {
+                        text: text,
+                        width: width,
+                        height: height,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                }
+            }, [text, width, height]);
+            return <div ref={qrRef} className="flex items-center justify-center"></div>;
+        };
 
         function calculateCRC16(str) {
             let crc = 0xFFFF;
@@ -200,6 +223,7 @@
         }
 
         function App() {
+            const [isOffline, setIsOffline] = useState(!navigator.onLine);
             const [view, setView] = useState('landing');
             const [adminTab, setAdminTab] = useState('pos');
             const [currentUser, setCurrentUser] = useState(null); 
@@ -251,6 +275,11 @@
             };
 
             useEffect(() => {
+                const handleOffline = () => setIsOffline(true);
+                const handleOnline = () => setIsOffline(false);
+                window.addEventListener('offline', handleOffline);
+                window.addEventListener('online', handleOnline);
+
                 const sSettings = localStorage.getItem('qrResto_settings');
                 if (sSettings) setSettings(JSON.parse(sSettings));
                 
@@ -276,6 +305,11 @@
                     setView('customer');
                     window.history.pushState({}, '', window.location.pathname);
                 }
+
+                return () => {
+                    window.removeEventListener('offline', handleOffline);
+                    window.removeEventListener('online', handleOnline);
+                };
             }, []);
 
             useEffect(() => { localStorage.setItem('qrResto_settings', JSON.stringify(settings)); }, [settings]);
@@ -379,7 +413,7 @@
                 };
                 setOrders([newOrder, ...orders]);
                 setActiveOrder(newOrder);
-                setReceiptOrder(newOrder); // Tampilkan struk seketika
+                setReceiptOrder(newOrder); 
                 setCustomerCart([]);
                 setShowCart(false);
             };
@@ -499,12 +533,34 @@
                 });
             };
 
-            const printQR = (table) => {
+            // Helper untuk generate base64 QR code gambar yang identik
+            const getQrBase64Sync = (text, size = 150) => {
+                return new Promise((resolve) => {
+                    const tempDiv = document.createElement('div');
+                    new QRCode(tempDiv, {
+                        text: text,
+                        width: size,
+                        height: size,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                    setTimeout(() => {
+                        const canvas = tempDiv.querySelector('canvas');
+                        resolve(canvas ? canvas.toDataURL('image/png') : '');
+                    }, 50);
+                });
+            };
+
+            const printQR = async (table) => {
                 const printWindow = window.open('', '_blank');
                 if (!printWindow) {
                     showCustomAlert('Peringatan', 'Pop-up terblokir oleh browser.');
                     return;
                 }
+                
+                const qrBase64 = await getQrBase64Sync(table.link, 250);
+
                 printWindow.document.write(`
                     <html>
                     <head>
@@ -514,21 +570,17 @@
                             .card { border: 2px dashed #000; padding: 40px; text-align: center; border-radius: 20px; }
                             h1 { margin: 0 0 10px 0; font-size: 24px; }
                             p { margin: 0 0 20px 0; color: #666; }
-                            #qrcode { display: flex; justify-content: center; margin-bottom: 20px;}
+                            #qrcode img { display: block; margin: 0 auto 20px auto; }
                         </style>
-                        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
                     </head>
                     <body>
                         <div class="card">
                             <h1>${settings.restoName}</h1>
                             <p>Scan untuk Memesan<br><b>Meja: ${table.name}</b></p>
-                            <div id="qrcode"></div>
+                            <div id="qrcode"><img src="${qrBase64}" alt="QR Meja"/></div>
                         </div>
                         <script>
-                            new QRCode(document.getElementById("qrcode"), {
-                                text: "${table.link}", width: 250, height: 250
-                            });
-                            setTimeout(() => { window.print(); window.close(); }, 800);
+                            window.onload = function() { window.print(); window.close(); }
                         <\/script>
                     </body>
                     </html>
@@ -536,7 +588,7 @@
                 printWindow.document.close();
             };
 
-            const printReceipt = (order) => {
+            const printReceipt = async (order) => {
                 const printWindow = window.open('', '_blank');
                 if (!printWindow) {
                     showCustomAlert('Peringatan', 'Pop-up terblokir oleh browser.');
@@ -544,7 +596,12 @@
                 }
                 const paymentName = paymentMethods.find(p => p.id === order.paymentMethod)?.name || order.paymentMethod;
                 const isQris = paymentMethods.find(p => p.id === order.paymentMethod)?.type === 'qris';
-                const qrisImgUrl = isQris ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(generateDynamicQris(settings.staticQris, Math.round(order.total)))}` : '';
+                let qrisBase64 = '';
+
+                if (isQris) {
+                    const dynQris = generateDynamicQris(settings.staticQris, Math.round(order.total));
+                    qrisBase64 = await getQrBase64Sync(dynQris, 120);
+                }
 
                 printWindow.document.write(`
                     <html>
@@ -557,7 +614,7 @@
                             .line { border-bottom: 1px dashed #000; margin: 8px 0; }
                             .flex { display: flex; justify-content: space-between; }
                             .qris-box { text-align: center; margin: 10px 0; }
-                            .qris-box img { width: 120px; height: 120px; }
+                            .qris-box img { width: 120px; height: 120px; display: inline-block; }
                         </style>
                     </head>
                     <body>
@@ -590,7 +647,7 @@
                             <div class="line"></div>
                             <div class="center bold">QRIS PEMBAYARAN</div>
                             <div class="qris-box">
-                                <img src="${qrisImgUrl}" alt="QRIS" />
+                                <img src="${qrisBase64}" alt="QRIS" />
                             </div>
                             <div class="center" style="font-size: 10px;">Scan untuk konfirmasi pembayaran</div>
                         ` : ''}
@@ -606,21 +663,19 @@
                 printWindow.document.close();
             };
 
-            const downloadReceiptImg = (order) => {
+            const downloadReceiptImg = async (order) => {
                 const isQris = paymentMethods.find(p => p.id === order.paymentMethod)?.type === 'qris';
                 
-                // Kalkulasi tinggi kanvas dinamis
                 let h = 320 + (order.items.length * 20);
                 if (settings.taxRate > 0) h += 20;
                 if (settings.serviceCharge > 0) h += 20;
-                if (isQris) h += 220; // Tambahan untuk QRIS code dan label
+                if (isQris) h += 220; 
 
                 const canvas = document.createElement('canvas');
                 canvas.width = 400;
                 canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 
-                // Background putih
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -709,14 +764,11 @@
                     a.click();
                 };
 
-                // Generate QRIS code directly on canvas if applicable
                 if (isQris) {
                     const dynQris = generateDynamicQris(settings.staticQris, Math.round(order.total));
-                    const tempDiv = document.createElement('div');
-                    // This generates a synchronous/local canvas, dodging CORS restrictions
-                    new QRCode(tempDiv, { text: dynQris, width: 150, height: 150 });
-                    
-                    setTimeout(() => {
+                    const qrDataUrl = await getQrBase64Sync(dynQris, 150);
+                    const img = new Image();
+                    img.onload = () => {
                         ctx.beginPath();
                         ctx.setLineDash([4, 2]);
                         ctx.moveTo(20, y); ctx.lineTo(380, y);
@@ -729,13 +781,11 @@
                         ctx.fillText('QRIS PEMBAYARAN', canvas.width / 2, y);
                         y += 15;
 
-                        const qrCanvas = tempDiv.querySelector('canvas');
-                        if (qrCanvas) {
-                            ctx.drawImage(qrCanvas, (canvas.width - 150) / 2, y);
-                            y += 170;
-                        }
+                        ctx.drawImage(img, (canvas.width - 150) / 2, y, 150, 150);
+                        y += 170;
                         finishDownload();
-                    }, 100);
+                    };
+                    img.src = qrDataUrl;
                 } else {
                     finishDownload();
                 }
@@ -771,15 +821,38 @@
                     } catch (error) {
                         showCustomAlert('Restore Gagal', 'Format file backup tidak valid atau rusak.');
                     }
-                    e.target.value = ''; // Reset file input
+                    e.target.value = ''; 
                 };
                 reader.readAsText(file);
             };
 
+            const renderCheckoutButton = () => {
+                const isActive = checkoutData.paymentMethod ? true : false;
+                const totalAmt = calculateTotal(customerCart);
+                
+                return (
+                    <button 
+                        onClick={handleCustomerCheckout} 
+                        disabled={!isActive} 
+                        className={`w-full py-4 rounded-xl font-bold transition-all shadow-lg ${isActive ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-brand-500/30' : 'bg-zinc-200 text-zinc-400'}`}
+                    >
+                        Kirim Pesanan (Rp {totalAmt.toLocaleString('id-ID')})
+                    </button>
+                );
+            };
+
             return (
                 <div className="min-h-screen">
+                    {/* Bumper Banner untuk Mode Offline */}
+                    {isOffline && (
+                        <div className="bg-red-600 text-white text-xs sm:text-sm font-bold text-center py-2 px-4 w-full shadow-md z-[100] relative flex items-center justify-center space-x-2">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3" /></svg>
+                            <span>Mode Luring Aktif. Anda dapat tetap menggunakan aplikasi, data tersimpan secara lokal.</span>
+                        </div>
+                    )}
+
                     {modalConfig.isOpen && (
-                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 glass-panel">
+                        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 glass-panel">
                             <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center">
                                 <div className="w-16 h-16 bg-brand-100 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -838,8 +911,8 @@
                                         <div className="pt-2 text-center">
                                             <div className="border-b border-dashed border-zinc-300 pb-2 mb-2"></div>
                                             <div className="font-bold mb-1">QRIS PEMBAYARAN</div>
-                                            <div className="w-28 h-28 bg-white p-1 mx-auto border rounded">
-                                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(generateDynamicQris(settings.staticQris, Math.round(receiptOrder.total)))}`} alt="QRIS" className="w-full h-full" />
+                                            <div className="w-28 h-28 bg-white p-1 mx-auto border rounded flex items-center justify-center">
+                                                <QRCodeCanvas text={generateDynamicQris(settings.staticQris, Math.round(receiptOrder.total))} width={100} height={100} />
                                             </div>
                                         </div>
                                     )}
@@ -1012,7 +1085,7 @@
                                         return (
                                             <div key={item.id} className="bg-white rounded-2xl p-3 shadow-sm border border-zinc-100 flex flex-col">
                                                 <div className="relative aspect-square rounded-xl overflow-hidden mb-3">
-                                                    <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => { e.target.src = `https://placehold.co/300x300/f4f4f5/a1a1aa?text=${encodeURIComponent(item.name)}`; }} />
+                                                    <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = getFallbackImage(item.name); }} />
                                                 </div>
                                                 <div className="flex-1 flex flex-col">
                                                     <h3 className="font-bold text-sm text-zinc-800 leading-tight mb-1">{item.name}</h3>
@@ -1054,17 +1127,25 @@
                                         <div className="bg-white w-full rounded-t-3xl h-[85vh] flex flex-col">
                                             <div className="p-4 border-b border-zinc-100 flex justify-between items-center sticky top-0 bg-white rounded-t-3xl z-10">
                                                 <h2 className="font-black text-lg">Keranjang Pesanan</h2>
-                                                <button onClick={() => setShowCart(false)} className="bg-zinc-100 p-2 rounded-full text-zinc-500 hover:bg-zinc-200">
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                </button>
+                                                <div className="flex items-center space-x-2">
+                                                    {customerCart.length > 0 && (
+                                                        <button onClick={() => showCustomAlert('Kosongkan Keranjang', 'Apakah Anda yakin ingin menghapus semua pesanan?', () => { setCustomerCart([]); setShowCart(false); })} className="text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-xl text-sm font-bold flex items-center transition-colors">
+                                                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                            Kosongkan
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => setShowCart(false)} className="bg-zinc-100 p-2 rounded-full text-zinc-500 hover:bg-zinc-200">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                    </button>
+                                                </div>
                                             </div>
                                             
                                             <div className="flex-1 overflow-y-auto p-4 space-y-6">
                                                 <div className="space-y-4">
                                                     {customerCart.map(item => (
                                                         <div key={item.id} className="flex gap-3">
-                                                            <div className="w-16 h-16 rounded-xl bg-zinc-100 overflow-hidden">
-                                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                                                            <div className="w-16 h-16 rounded-xl bg-zinc-100 overflow-hidden flex-shrink-0">
+                                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = getFallbackImage(item.name); }} />
                                                             </div>
                                                             <div className="flex-1 flex flex-col justify-between">
                                                                 <h4 className="font-bold text-sm text-zinc-800">{item.name}</h4>
@@ -1102,13 +1183,7 @@
                                                         <div className="mt-4 p-4 bg-brand-50 rounded-2xl text-center border border-brand-200">
                                                             <p className="font-bold text-sm text-brand-800 mb-2">Scan QRIS Dinamis (Pembayaran Langsung)</p>
                                                             <div className="w-40 h-40 bg-white p-2 mx-auto rounded-xl shadow-sm border flex items-center justify-center">
-                                                                {(() => {
-                                                                    const totalAmt = calculateTotal(customerCart);
-                                                                    const dynQris = generateDynamicQris(settings.staticQris, Math.round(totalAmt));
-                                                                    return (
-                                                                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(dynQris)}`} alt="QRIS Dinamis" className="w-full h-full" />
-                                                                    );
-                                                                })()}
+                                                                <QRCodeCanvas text={generateDynamicQris(settings.staticQris, Math.round(calculateTotal(customerCart)))} width={140} height={140} />
                                                             </div>
                                                             <p className="text-xs text-brand-600 font-semibold mt-2">Total Tagihan: Rp {calculateTotal(customerCart).toLocaleString('id-ID')}</p>
                                                         </div>
@@ -1140,9 +1215,7 @@
                                             </div>
                                             
                                             <div className="p-4 bg-white border-t border-zinc-100 pb-8">
-                                                <button onClick={handleCustomerCheckout} disabled={!checkoutData.paymentMethod} className={`w-full py-4 rounded-xl font-bold transition-all shadow-lg ${checkoutData.paymentMethod ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-brand-500/30' : 'bg-zinc-200 text-zinc-400'}`}>
-                                                    Kirim Pesanan (Verifikasi Kasir)
-                                                </button>
+                                                {renderCheckoutButton()}
                                             </div>
                                         </div>
                                     </div>
@@ -1202,7 +1275,7 @@
                                 </div>
                             </aside>
 
-                            <main className="flex-1 flex flex-col h-screen overflow-hidden">
+                            <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
                                 <header className="bg-white px-6 py-4 border-b border-zinc-100 flex items-center justify-between sticky top-0 z-10 shadow-sm">
                                     <h2 className="text-xl font-bold text-zinc-800 capitalize">
                                         {adminTab === 'pos' ? 'Kasir (Point of Sale)' : 
@@ -1237,7 +1310,7 @@
                                                     {menuItems.filter(item => posActiveCat === 'Semua' || item.category === posActiveCat).map(item => (
                                                         <div key={item.id} onClick={() => addToPosCart(item)} className="bg-white border border-zinc-100 rounded-2xl p-2 cursor-pointer hover:border-brand-400 hover:shadow-md transition-all group flex flex-col h-full">
                                                             <div className="relative aspect-square rounded-xl overflow-hidden mb-2 bg-zinc-100">
-                                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" onError={(e) => { e.target.src = `https://placehold.co/300x300/f4f4f5/a1a1aa?text=${encodeURIComponent(item.name)}`; }} />
+                                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" onError={(e) => { e.target.onerror = null; e.target.src = getFallbackImage(item.name); }} />
                                                             </div>
                                                             <h3 className="font-bold text-xs text-zinc-800 line-clamp-2 leading-tight mb-1">{item.name}</h3>
                                                             <p className="text-brand-600 font-black text-xs mt-auto">Rp {item.price.toLocaleString('id-ID')}</p>
@@ -1247,7 +1320,15 @@
                                             </div>
 
                                             <div className="w-full lg:w-96 flex flex-col bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden flex-shrink-0 h-full">
-                                                <div className="p-4 border-b border-zinc-100 bg-zinc-50"><h3 className="font-black text-lg text-zinc-800">Keranjang Kasir</h3></div>
+                                                <div className="p-4 border-b border-zinc-100 bg-zinc-50 flex justify-between items-center">
+                                                    <h3 className="font-black text-lg text-zinc-800">Keranjang Kasir</h3>
+                                                    {posCart.length > 0 && (
+                                                        <button onClick={() => showCustomAlert('Kosongkan POS', 'Hapus semua pesanan dari keranjang kasir?', () => setPosCart([]))} className="text-red-500 hover:bg-red-50 px-2 py-1 rounded-lg text-xs font-bold flex items-center transition-colors">
+                                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                            Kosongkan
+                                                        </button>
+                                                    )}
+                                                </div>
                                                 
                                                 <div className="flex-1 overflow-y-auto p-4">
                                                     {posCart.length === 0 ? (
@@ -1405,7 +1486,7 @@
                                             <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4">
                                                 {menuItems.map(item => (
                                                     <div key={item.id} className="bg-white p-3 rounded-2xl shadow-sm border border-zinc-200 flex flex-col">
-                                                        <img src={item.image} alt={item.name} className="w-full h-32 object-cover rounded-xl mb-3 bg-zinc-100" />
+                                                        <img src={item.image} alt={item.name} className="w-full h-32 object-cover rounded-xl mb-3 bg-zinc-100" onError={(e) => { e.target.onerror = null; e.target.src = getFallbackImage(item.name); }} />
                                                         <div className="flex justify-between items-start mb-1">
                                                             <h4 className="font-bold text-sm text-zinc-800 leading-tight">{item.name}</h4>
                                                             <span className="text-xs bg-zinc-100 px-1.5 py-0.5 rounded text-zinc-500">{item.category}</span>
@@ -1460,8 +1541,8 @@
                                                     <div key={table.id} className="bg-white p-5 rounded-2xl shadow-sm border border-zinc-200 flex flex-col items-center text-center">
                                                         <h4 className="font-black text-xl text-zinc-800 mb-1">{table.name}</h4>
                                                         <p className="text-xs text-zinc-400 mb-4 break-all bg-zinc-50 p-2 rounded-lg border border-zinc-100">{table.link}</p>
-                                                        <div className="w-32 h-32 bg-white p-2 border border-zinc-200 rounded-xl mb-4 shadow-sm">
-                                                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(table.link)}`} alt={`QR ${table.name}`} className="w-full h-full" />
+                                                        <div className="w-32 h-32 bg-white p-2 border border-zinc-200 rounded-xl mb-4 shadow-sm flex items-center justify-center">
+                                                            <QRCodeCanvas text={table.link} width={110} height={110} />
                                                         </div>
                                                         <div className="flex gap-2 w-full mt-auto">
                                                             <button onClick={() => printQR(table)} className="flex-1 bg-zinc-900 text-white py-2 rounded-lg text-sm font-bold hover:bg-zinc-800">Cetak QR</button>
@@ -1601,49 +1682,49 @@
                                                         <div key={pm.id} className={`flex items-center justify-between p-4 rounded-xl border ${pm.isActive ? 'border-brand-200 bg-brand-50/30' : 'border-zinc-200 bg-zinc-50 opacity-60'}`}>
                                                             <div>
                                                                 <h4 className="font-bold text-zinc-800">{pm.name}</h4>
-                                                            <p className="text-xs font-medium text-zinc-500 uppercase mt-0.5">Tipe: {pm.type}</p>
+                                                                <p className="text-xs font-medium text-zinc-500 uppercase mt-0.5">Tipe: {pm.type}</p>
                                                             </div>
                                                             <label className="relative inline-flex items-center cursor-pointer">
-                                                            <input type="checkbox" className="sr-only peer" checked={pm.isActive} onChange={() => {
-                                                                setPaymentMethods(paymentMethods.map(p => p.id === pm.id ? { ...p, isActive: !p.isActive } : p));
-                                                            }} />
-                                                            <div className="w-11 h-6 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                                                                <input type="checkbox" className="sr-only peer" checked={pm.isActive} onChange={() => {
+                                                                    setPaymentMethods(paymentMethods.map(p => p.id === pm.id ? { ...p, isActive: !p.isActive } : p));
+                                                                }} />
+                                                                <div className="w-11 h-6 bg-zinc-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                                                            </label>
+                                                        </div>
+                                                    ))}
+                                                    <p className="text-xs text-zinc-500 italic pt-2">*Metode yang dinonaktifkan tidak akan muncul di halaman checkout pelanggan maupun kasir.</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-200">
+                                                <div className="flex justify-between items-center mb-4 border-b border-zinc-100 pb-2">
+                                                    <h3 className="font-black text-lg text-zinc-800">Manajemen Data (Backup)</h3>
+                                                </div>
+                                                <div className="space-y-4">
+                                                    <div className="bg-green-50 text-green-700 p-3 rounded-xl border border-green-200 flex items-start space-x-3 text-sm">
+                                                        <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                        <div>
+                                                            <p className="font-bold">Auto-Save Aktif</p>
+                                                            <p className="text-xs opacity-80 mt-1">Data secara otomatis tersimpan secara real-time di memori perangkat (Local Storage). Gunakan fitur backup ini secara rutin untuk mencegah data hilang jika history browser dibersihkan.</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <button onClick={handleBackup} className="flex flex-col items-center justify-center p-4 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-xl border border-brand-200 transition-colors">
+                                                            <svg className="w-6 h-6 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                                            <span className="font-bold text-sm">Download Backup</span>
+                                                        </button>
+                                                        <label className="flex flex-col items-center justify-center p-4 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 rounded-xl border border-zinc-200 transition-colors cursor-pointer">
+                                                            <svg className="w-6 h-6 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                            <span className="font-bold text-sm">Restore Data</span>
+                                                            <input type="file" accept=".json" onChange={handleRestore} className="hidden" />
                                                         </label>
                                                     </div>
-                                                ))}
-                                                <p className="text-xs text-zinc-500 italic pt-2">*Metode yang dinonaktifkan tidak akan muncul di halaman checkout pelanggan maupun kasir.</p>
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-200">
-                                            <div className="flex justify-between items-center mb-4 border-b border-zinc-100 pb-2">
-                                                <h3 className="font-black text-lg text-zinc-800">Manajemen Data (Backup)</h3>
-                                            </div>
-                                            <div className="space-y-4">
-                                                <div className="bg-green-50 text-green-700 p-3 rounded-xl border border-green-200 flex items-start space-x-3 text-sm">
-                                                    <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                                    <div>
-                                                        <p className="font-bold">Auto-Save Aktif</p>
-                                                        <p className="text-xs opacity-80 mt-1">Data secara otomatis tersimpan secara real-time di memori perangkat (Local Storage). Gunakan fitur backup ini secara rutin untuk mencegah data hilang jika history browser dibersihkan.</p>
-                                                    </div>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <button onClick={handleBackup} className="flex flex-col items-center justify-center p-4 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-xl border border-brand-200 transition-colors">
-                                                        <svg className="w-6 h-6 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                                                        <span className="font-bold text-sm">Download Backup</span>
-                                                    </button>
-                                                    <label className="flex flex-col items-center justify-center p-4 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 rounded-xl border border-zinc-200 transition-colors cursor-pointer">
-                                                        <svg className="w-6 h-6 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                                        <span className="font-bold text-sm">Restore Data</span>
-                                                        <input type="file" accept=".json" onChange={handleRestore} className="hidden" />
-                                                    </label>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
-                            </div>
-                        </main>
+                                    )}
+                                </div>
+                            </main>
                         </div>
                     )}
                 </div>

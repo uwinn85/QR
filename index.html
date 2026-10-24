@@ -307,9 +307,21 @@
                     window.history.pushState({}, '', window.location.pathname);
                 }
 
+                // EVENT LISTENER: Sync Real-time across Tabs
+                const handleStorageChange = (e) => {
+                    if (e.key === 'qrResto_orders' && e.newValue) setOrders(JSON.parse(e.newValue));
+                    if (e.key === 'qrResto_menu' && e.newValue) setMenuItems(JSON.parse(e.newValue));
+                    if (e.key === 'qrResto_settings' && e.newValue) setSettings(JSON.parse(e.newValue));
+                    if (e.key === 'qrResto_payments' && e.newValue) setPaymentMethods(JSON.parse(e.newValue));
+                    if (e.key === 'qrResto_tables' && e.newValue) setTables(JSON.parse(e.newValue));
+                    if (e.key === 'qrResto_staff' && e.newValue) setStaffUsers(JSON.parse(e.newValue));
+                };
+                window.addEventListener('storage', handleStorageChange);
+
                 return () => {
                     window.removeEventListener('offline', handleOffline);
                     window.removeEventListener('online', handleOnline);
+                    window.removeEventListener('storage', handleStorageChange);
                 };
             }, []);
 
@@ -406,7 +418,12 @@
                     cashGiven: 0,
                     changeAmount: 0
                 };
-                setOrders([newOrder, ...orders]);
+                
+                // Real-time safety: fetch latest orders before adding
+                const currentOrdersStr = localStorage.getItem('qrResto_orders');
+                const latestOrders = currentOrdersStr ? JSON.parse(currentOrdersStr) : orders;
+                
+                setOrders([newOrder, ...latestOrders]);
                 setActiveOrder(newOrder);
                 setReceiptOrder(newOrder); 
                 setCustomerCart([]);
@@ -466,12 +483,24 @@
                     cashGiven: isCash ? cashGivenNum : 0,
                     changeAmount: isCash ? changeNum : 0
                 };
-                setOrders([newOrder, ...orders]);
+                
+                // Real-time safety: fetch latest orders before adding
+                const currentOrdersStr = localStorage.getItem('qrResto_orders');
+                const latestOrders = currentOrdersStr ? JSON.parse(currentOrdersStr) : orders;
+                
+                setOrders([newOrder, ...latestOrders]);
                 setPosCart([]);
                 setPosTableNo('');
                 setPosPaymentMethod('');
                 setPosCashGiven('');
                 setReceiptOrder(newOrder);
+            };
+            
+            // Helper for real-time status update
+            const updateOrderStatus = (orderId, newStatus) => {
+                const currentOrdersStr = localStorage.getItem('qrResto_orders');
+                const currentOrders = currentOrdersStr ? JSON.parse(currentOrdersStr) : orders;
+                setOrders(currentOrders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
             };
 
             const saveMenu = (e) => {
@@ -1614,19 +1643,19 @@
                                                                             </td>
                                                                             <td className="p-3 text-center">
                                                                                 {order.status === 'unverified' && (
-                                                                                    <button onClick={() => setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'pending' } : o))} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs shadow-sm transition-colors whitespace-nowrap">
+                                                                                    <button onClick={() => updateOrderStatus(order.id, 'pending')} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs shadow-sm transition-colors whitespace-nowrap">
                                                                                         Verifikasi & Terima
                                                                                     </button>
                                                                                 )}
                                                                                 {order.status === 'pending' && (
-                                                                                    <button onClick={() => setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'processing' } : o))} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm transition-colors whitespace-nowrap">
+                                                                                    <button onClick={() => updateOrderStatus(order.id, 'processing')} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm transition-colors whitespace-nowrap">
                                                                                         Proses Dapur
                                                                                     </button>
                                                                                 )}
                                                                                 {order.status === 'processing' && (
                                                                                     <button onClick={() => {
-                                                                                        setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'completed' } : o));
-                                                                                        setReceiptOrder(order);
+                                                                                        updateOrderStatus(order.id, 'completed');
+                                                                                        setReceiptOrder({ ...order, status: 'completed' });
                                                                                     }} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-sm transition-colors whitespace-nowrap">
                                                                                         Selesaikan & Struk
                                                                                     </button>

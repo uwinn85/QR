@@ -68,22 +68,6 @@
 <body>
     <div id="root"></div>
 
-    <!-- Supabase: database dan realtime lintas HP, komputer kasir, dan admin -->
-    <script src="/supabase-config.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script>
-      try {
-        const config = window.RESTO_SUPABASE_CONFIG;
-        window.restoSupabase = supabase.createClient(config.url, config.key, {
-          realtime: { params: { eventsPerSecond: 10 } }
-        });
-        window.restoSupabaseReady = Boolean(config.url && config.key);
-      } catch (e) {
-        window.restoSupabaseReady = false;
-        console.error('Supabase gagal diinisialisasi:', e);
-      }
-    </script>
-
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
@@ -136,30 +120,8 @@
         ];
 
         const getFallbackImage = (name) => {
-            const safeName = String(name || '').replace(/[<>&"']/g, (character) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[character]);
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect fill="#e4e4e7" width="300" height="300"/><text fill="#71717a" font-family="sans-serif" font-size="20" font-weight="bold" x="50%" y="50%" dominant-baseline="middle" text-anchor="middle">${safeName}</text></svg>`;
-            return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-        };
-
-        const normalizeOrder = (order) => ({
-            ...order,
-            table: order.table ?? order.table_name ?? '',
-            orderType: order.orderType ?? order.order_type ?? 'dine-in',
-            paymentMethod: order.paymentMethod ?? order.payment_method ?? '',
-            cashGiven: Number(order.cashGiven ?? order.cash_given ?? 0),
-            changeAmount: Number(order.changeAmount ?? order.change_amount ?? 0),
-            updatedAt: order.updatedAt ?? order.updated_at,
-            updatedBy: order.updatedBy ?? order.updated_by
-        });
-
-        const loadStoredValue = (key, fallback) => {
-            try {
-                const stored = localStorage.getItem(key);
-                return stored === null ? fallback : JSON.parse(stored);
-            } catch (error) {
-                console.warn(`[v0] Data tersimpan tidak valid untuk ${key}, memakai nilai default.`, error);
-                return fallback;
-            }
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect fill="#e4e4e7" width="300" height="300"/><text fill="#71717a" font-family="sans-serif" font-size="20" font-weight="bold" x="50%" y="50%" dominant-baseline="middle" text-anchor="middle">${name}</text></svg>`;
+            return `data:image/svg+xml;base64,${btoa(svg)}`;
         };
 
         const QRCodeCanvas = ({ text, width = 150, height = 150 }) => {
@@ -235,7 +197,7 @@
             }
 
             const amountStr = Math.round(amount).toString();
-            const tag54Val = '54' + String(amountStr.length).padStart(2, '0') + amountStr;
+            const tag54Val = '54' + (amountStr.length < 10 ? '0' + amountStr.length : amountStr.length) + amountStr;
 
             const idx58 = cleanQris.indexOf('5802ID');
             const idx59 = cleanQris.indexOf('59');
@@ -302,6 +264,8 @@
             const [showCategoryModal, setShowCategoryModal] = useState(false);
             const [categoryForm, setCategoryForm] = useState({ name: '' });
             const [tableTheme, setTableTheme] = useState('classic');
+            const [showTableModal, setShowTableModal] = useState(false);
+            const [tableNameInput, setTableNameInput] = useState('');
 
             const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
 
@@ -319,15 +283,23 @@
                 window.addEventListener('offline', handleOffline);
                 window.addEventListener('online', handleOnline);
 
-                setSettings(loadStoredValue('qrResto_settings', DEFAULT_SETTINGS));
-                setPaymentMethods(loadStoredValue('qrResto_payments', DEFAULT_PAYMENT_METHODS));
-                setMenuItems(loadStoredValue('qrResto_menu', DEFAULT_MENU));
-                setOrders(loadStoredValue('qrResto_orders', []));
-                setTables(loadStoredValue('qrResto_tables', [
-                    { id: 'T1', name: 'Meja 1', link: window.location.origin + window.location.pathname + '?table=1' },
-                    { id: 'T2', name: 'Meja 2', link: window.location.origin + window.location.pathname + '?table=2' }
-                ]));
-                setStaffUsers(loadStoredValue('qrResto_staff', DEFAULT_USERS));
+                const sSettings = localStorage.getItem('qrResto_settings');
+                if (sSettings) setSettings(JSON.parse(sSettings));
+                
+                const sPayments = localStorage.getItem('qrResto_payments');
+                if (sPayments) setPaymentMethods(JSON.parse(sPayments));
+
+                const sMenu = localStorage.getItem('qrResto_menu');
+                if (sMenu) setMenuItems(JSON.parse(sMenu));
+
+                const sOrders = localStorage.getItem('qrResto_orders');
+                if (sOrders) setOrders(JSON.parse(sOrders));
+
+                const sTables = localStorage.getItem('qrResto_tables');
+                if (sTables) setTables(JSON.parse(sTables));
+
+                const sStaff = localStorage.getItem('qrResto_staff');
+                if (sStaff) setStaffUsers(JSON.parse(sStaff));
 
                 const urlParams = new URLSearchParams(window.location.search);
                 const tableParam = urlParams.get('table');
@@ -362,28 +334,6 @@
             useEffect(() => { localStorage.setItem('qrResto_tables', JSON.stringify(tables)); }, [tables]);
             useEffect(() => { localStorage.setItem('qrResto_staff', JSON.stringify(staffUsers)); }, [staffUsers]);
 
-            // Supabase Realtime: semua perangkat menerima pesanan dan perubahan status.
-            useEffect(() => {
-                if (!window.restoSupabaseReady) return;
-                let active = true;
-                const loadOrders = async (attempt = 0) => {
-                    const { data, error } = await window.restoSupabase.from('orders').select('*').order('time', { ascending: false });
-                    if (error) {
-                        console.error('[v0] Gagal membaca pesanan online:', error);
-                        if (active && attempt < 3) {
-                            window.setTimeout(() => loadOrders(attempt + 1), 750 * (attempt + 1));
-                        }
-                        return;
-                    }
-                    if (active) setOrders((data || []).map(normalizeOrder));
-                };
-                loadOrders();
-                const channel = window.restoSupabase.channel('orders-realtime')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadOrders)
-                    .subscribe((status) => console.log('[v0] Realtime orders:', status));
-                return () => { active = false; window.restoSupabase.removeChannel(channel); };
-            }, []);
-
             useEffect(() => {
                 if (settings.appBackground) {
                     const bg = settings.appBackground.trim();
@@ -400,7 +350,7 @@
                 }
             }, [settings.appBackground]);
 
-            const generateOrderId = () => `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+            const generateOrderId = () => `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
             const calculateSubtotal = (cart) => cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const calculateTax = (subtotal) => subtotal * (settings.taxRate / 100);
             const calculateService = (subtotal) => subtotal * (settings.serviceCharge / 100);
@@ -409,38 +359,20 @@
                 return sub + calculateTax(sub) + calculateService(sub);
             };
 
-            const handleLoginSubmit = async (e) => {
+            const handleLoginSubmit = (e) => {
                 e.preventDefault();
-                if (!window.restoSupabaseReady) {
-                    showCustomAlert('Supabase Belum Siap', 'Database online belum berhasil diinisialisasi.');
-                    return;
-                }
-                const typedUser = loginForm.username.trim().toLowerCase();
-                const username = typedUser.includes('@') ? typedUser.split('@')[0] : typedUser;
-                    const email = typedUser.includes('@') ? typedUser : `${username}@resto-qr-pro-dev.firebaseapp.com`;
-                    try {
-                    const { data, error } = await window.restoSupabase.auth.signInWithPassword({ email, password: loginForm.pin });
-                    if (error) throw error;
-                    const credential = { user: data.user };
-                    const allowedUser = staffUsers.find(u => u.username.toLowerCase() === username);
-                    // Hanya staf yang terdaftar di aplikasi yang boleh masuk ke panel kasir/admin.
-                    if (!allowedUser) {
-                        await window.restoSupabase.auth.signOut();
-                        showCustomAlert('Akses Ditolak', 'Akun berhasil masuk, tetapi username tidak terdaftar pada data staf aplikasi.');
-                        return;
-                    }
-                    setCurrentUser({ ...allowedUser, email: credential.user.email, uid: credential.user.uid });
+                const found = staffUsers.find(u => u.username === loginForm.username && u.pin === loginForm.pin);
+                if (found) {
+                    setCurrentUser(found);
                     setView('admin');
                     setAdminTab('pos');
                     setLoginForm({ username: '', pin: '' });
-                } catch (error) {
-                    console.error('Login Supabase gagal:', error);
-                    showCustomAlert('Gagal Masuk', 'Login gagal. Pastikan akun staf sudah dibuat di Supabase Authentication dan password benar.');
+                } else {
+                    showCustomAlert('Gagal Masuk', 'Username atau PIN salah. Silakan coba lagi.');
                 }
             };
 
-            const handleLogout = async () => {
-                try { if (window.restoSupabaseReady) await window.restoSupabase.auth.signOut(); } catch (e) { console.error(e); }
+            const handleLogout = () => {
                 setCurrentUser(null);
                 setView('landing');
             };
@@ -468,39 +400,36 @@
                 }).filter(item => item.quantity > 0));
             };
 
-            const handleCustomerCheckout = async () => {
+            const handleCustomerCheckout = () => {
                 if (!checkoutData.paymentMethod || customerCart.length === 0) return;
-                const subtotal = calculateSubtotal(customerCart);
+                
                 const newOrder = {
                     id: generateOrderId(),
-                    table_name: customerOrderType === 'takeaway' ? 'Takeaway' : customerTable,
-                    order_type: customerOrderType,
+                    table: customerOrderType === 'takeaway' ? 'Takeaway' : customerTable,
+                    orderType: customerOrderType,
                     items: [...customerCart],
-                    subtotal,
-                    tax: calculateTax(subtotal),
-                    service: calculateService(subtotal),
+                    subtotal: calculateSubtotal(customerCart),
+                    tax: calculateTax(calculateSubtotal(customerCart)),
+                    service: calculateService(calculateSubtotal(customerCart)),
                     total: calculateTotal(customerCart),
-                    payment_method: checkoutData.paymentMethod,
+                    paymentMethod: checkoutData.paymentMethod,
                     notes: checkoutData.notes,
-                    status: 'unverified',
+                    status: 'unverified', 
                     time: new Date().toISOString(),
                     source: 'QR',
-                    cash_given: 0,
-                    change_amount: 0
+                    cashGiven: 0,
+                    changeAmount: 0
                 };
-                try {
-                    if (!window.restoSupabaseReady) throw new Error('Supabase belum siap');
-                    const { data: savedOrder, error } = await window.restoSupabase.from('orders').upsert(newOrder, { onConflict: 'id' }).select().single();
-                    if (error) throw error;
-                    const confirmedOrder = normalizeOrder(savedOrder || newOrder);
-                    setActiveOrder(confirmedOrder);
-                    setReceiptOrder(newOrder);
-                    setCustomerCart([]);
-                    setShowCart(false);
-                } catch (error) {
-                    console.error('Kirim pesanan gagal:', error);
-                    showCustomAlert('Pesanan Belum Terkirim', 'Pesanan tidak berhasil disimpan ke database online. Periksa koneksi internet dan izin Supabase, lalu coba lagi. Keranjang tetap disimpan agar pesanan tidak hilang.');
-                }
+                
+                // Real-time safety: fetch latest orders before adding
+                const currentOrdersStr = localStorage.getItem('qrResto_orders');
+                const latestOrders = currentOrdersStr ? JSON.parse(currentOrdersStr) : orders;
+                
+                setOrders([newOrder, ...latestOrders]);
+                setActiveOrder(newOrder);
+                setReceiptOrder(newOrder); 
+                setCustomerCart([]);
+                setShowCart(false);
             };
 
             const addToPosCart = (item) => {
@@ -541,49 +470,39 @@
 
                 const newOrder = {
                     id: generateOrderId(),
-                    table_name: posTableNo || 'Takeaway',
-                    order_type: posOrderType,
+                    table: posTableNo || 'Takeaway',
+                    orderType: posOrderType,
                     items: [...posCart],
                     subtotal: calculateSubtotal(posCart),
                     tax: calculateTax(calculateSubtotal(posCart)),
                     service: calculateService(calculateSubtotal(posCart)),
                     total: totalAmt,
-                    payment_method: posPaymentMethod,
+                    paymentMethod: posPaymentMethod,
                     notes: '',
                     status: 'completed',
                     time: new Date().toISOString(),
                     source: 'KASIR',
-                    cash_given: isCash ? cashGivenNum : 0,
-                    change_amount: isCash ? changeNum : 0
+                    cashGiven: isCash ? cashGivenNum : 0,
+                    changeAmount: isCash ? changeNum : 0
                 };
                 
-                (async () => {
-                    try {
-                        if (!window.restoSupabaseReady || !currentUser) throw new Error('Kasir belum login');
-                        const { error } = await window.restoSupabase.from('orders').upsert(newOrder, { onConflict: 'id' });
-                        if (error) throw error;
-                        setPosCart([]);
-                        setPosTableNo('');
-                        setPosPaymentMethod('');
-                        setPosCashGiven('');
-                        setReceiptOrder(newOrder);
-                    } catch (error) {
-                        console.error('Simpan transaksi kasir gagal:', error);
-                        showCustomAlert('Transaksi Gagal Disimpan', 'Transaksi kasir tidak tersimpan ke database online. Periksa koneksi dan aturan keamanan Supabase. Keranjang belum dikosongkan.');
-                    }
-                })();
+                // Real-time safety: fetch latest orders before adding
+                const currentOrdersStr = localStorage.getItem('qrResto_orders');
+                const latestOrders = currentOrdersStr ? JSON.parse(currentOrdersStr) : orders;
+                
+                setOrders([newOrder, ...latestOrders]);
+                setPosCart([]);
+                setPosTableNo('');
+                setPosPaymentMethod('');
+                setPosCashGiven('');
+                setReceiptOrder(newOrder);
             };
             
             // Helper for real-time status update
-            const updateOrderStatus = async (orderId, newStatus) => {
-                try {
-                    if (!window.restoSupabaseReady || !currentUser) throw new Error('Staf belum login');
-                    const { error } = await window.restoSupabase.from('orders').update({ status: newStatus, updated_at: new Date().toISOString(), updated_by: currentUser.email }).eq('id', orderId);
-                    if (error) throw error;
-                } catch (error) {
-                    console.error('Update status pesanan gagal:', error);
-                    showCustomAlert('Status Belum Berubah', 'Status pesanan gagal diperbarui di database online. Periksa koneksi dan izin Supabase.');
-                }
+            const updateOrderStatus = (orderId, newStatus) => {
+                const currentOrdersStr = localStorage.getItem('qrResto_orders');
+                const currentOrders = currentOrdersStr ? JSON.parse(currentOrdersStr) : orders;
+                setOrders(currentOrders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
             };
 
             const saveMenu = (e) => {
@@ -676,12 +595,14 @@
                 setShowPaymentModal(true);
             };
 
-            const addTable = () => {
-                const name = prompt('Masukkan Nomor/Nama Meja baru:');
-                if (name) {
+            const handleAddTableSubmit = (e) => {
+                e.preventDefault();
+                if (tableNameInput.trim()) {
                     const id = `T${Date.now()}`;
-                    const link = `${window.location.origin}${window.location.pathname}?table=${encodeURIComponent(name)}`;
-                    setTables([...tables, { id, name, link }]);
+                    const link = `${window.location.origin}${window.location.pathname}?table=${encodeURIComponent(tableNameInput.trim())}`;
+                    setTables([...tables, { id, name: tableNameInput.trim(), link }]);
+                    setShowTableModal(false);
+                    setTableNameInput('');
                 }
             };
 
@@ -1235,16 +1156,16 @@
                                     <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                 </div>
                                 <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 mb-1.5 text-center">Login Staff</h2>
-                                <p className="text-[11px] sm:text-xs text-zinc-500 text-center mb-5">Masuk dengan akun staf Supabase yang sudah didaftarkan oleh administrator.</p>
+                                <p className="text-[11px] sm:text-xs text-zinc-500 text-center mb-5">Masukkan username dan PIN kasir/admin.</p>
                                 
                                 <form onSubmit={handleLoginSubmit} className="space-y-3.5">
                                     <div>
-                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Email / Username</label>
-                                        <input type="text" required placeholder="admin atau admin@resto-qr-pro-dev.firebaseapp.com" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-xs sm:text-sm focus:outline-none focus:border-brand-500" />
+                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Username</label>
+                                        <input type="text" required placeholder="Contoh: admin atau kasir1" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-xs sm:text-sm focus:outline-none focus:border-brand-500" />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Password Supabase</label>
-                                        <input type="password" required placeholder="Password akun Firebase" value={loginForm.pin} onChange={(e) => setLoginForm({...loginForm, pin: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-center text-xs sm:text-sm tracking-widest focus:outline-none focus:border-brand-500" />
+                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">PIN (4 digit)</label>
+                                        <input type="password" maxLength="4" required placeholder="••••" value={loginForm.pin} onChange={(e) => setLoginForm({...loginForm, pin: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-center text-xs sm:text-sm tracking-widest focus:outline-none focus:border-brand-500" />
                                     </div>
                                     <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-brand-600/30 text-xs sm:text-sm mt-1">
                                         Masuk Dashboard
@@ -1892,7 +1813,7 @@
                                                         <option value="classic">Tema: Klasik</option>
                                                         <option value="modern">Tema: Modern</option>
                                                     </select>
-                                                    <button onClick={addTable} className="bg-brand-600 text-white px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold hover:bg-brand-700 shadow-md whitespace-nowrap">
+                                                    <button onClick={() => setShowTableModal(true)} className="bg-brand-600 text-white px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold hover:bg-brand-700 shadow-md whitespace-nowrap">
                                                         + Tambah Meja
                                                     </button>
                                                 </div>
@@ -1912,6 +1833,26 @@
                                                     </div>
                                                 ))}
                                             </div>
+
+                                            {showTableModal && (
+                                                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 glass-panel">
+                                                    <div className="bg-white w-full max-w-xs sm:max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+                                                        <div className="p-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+                                                            <h3 className="font-black text-sm sm:text-base">Tambah Meja Baru</h3>
+                                                            <button onClick={() => setShowTableModal(false)} className="text-zinc-400 hover:text-zinc-600">
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            </button>
+                                                        </div>
+                                                        <form onSubmit={handleAddTableSubmit} className="p-4 space-y-3.5">
+                                                            <div>
+                                                                <label className="text-[11px] font-bold text-zinc-500 uppercase">Nomor/Nama Meja</label>
+                                                                <input type="text" required placeholder="Contoh: Meja 5, VIP-1" value={tableNameInput} onChange={e => setTableNameInput(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-zinc-300 focus:border-brand-500 outline-none text-xs sm:text-sm font-medium" />
+                                                            </div>
+                                                            <button type="submit" className="w-full bg-brand-600 text-white font-bold py-2.5 rounded-xl hover:bg-brand-700 mt-1 shadow-md text-xs sm:text-sm">Simpan Meja</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 

@@ -14,6 +14,9 @@
     <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
     
     <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -2087,5 +2090,16 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
+    <script>
+  window.__FIREBASE_CONFIG__ = {
+    apiKey: "AIzaSyA__UJhXQLG3ZxGZf2eNclg206I0hA0-2o",
+  authDomain: "resto-qr-pro-dev.firebaseapp.com",
+  databaseURL: "https://resto-qr-pro-dev-default-rtdb.firebaseio.com",
+  projectId: "resto-qr-pro-dev",
+  storageBucket: "resto-qr-pro-dev.firebasestorage.app",
+    messagingSenderId: "1040412280344",
+    appId: "1:1040412280344:web:34a6509c6c678075a8256d"
+  };
+</script>
 </body>
 </html>

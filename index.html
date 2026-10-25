@@ -431,42 +431,6 @@
         };
 
         function App() {
-		const [isOffline, setIsOffline] = useState(!navigator.onLine);
-    const [isLoadingDB, setIsLoadingDB] = useState(true);
-    // ... state lainnya ...
-
-    // ==========================================
-    // TAMBAHKAN KODE INI UNTUK SINKRONISASI FIREBASE
-    // ==========================================
-    useEffect(() => {
-        // Cek apakah Firebase sudah diinisialisasi melalui CDN di atas
-        if (window.firebaseDb && window.firebaseFns) {
-            const { doc, onSnapshot } = window.firebaseFns;
-            
-            // Mendengarkan perubahan data secara real-time pada dokumen "restaurant/main_data" di Firestore
-            const unsubscribe = onSnapshot(doc(window.firebaseDb, "restaurant", "main_data"), (docSnap) => {
-                if (docSnap.exists()) {
-                    const cloudData = docSnap.data();
-                    
-                    // Jika ada data pesanan baru di cloud, perbarui state pesanan otomatis
-                    if (cloudData.orders && Array.isArray(cloudData.orders)) {
-                        setOrders(cloudData.orders);
-                    }
-                    // Jika ada pembaruan menu di cloud, perbarui katalog menu otomatis
-                    if (cloudData.menuItems && Array.isArray(cloudData.menuItems)) {
-                        setMenuItems(cloudData.menuItems);
-                    }
-                }
-            });
-
-            // Membersihkan listener saat komponen dilepas
-            return () => unsubscribe();
-        }
-    }, []);
-    // ==========================================
-
-    // ... sisa kode aplikasi Resto QR Pro ...
-}
             const [isOffline, setIsOffline] = useState(!navigator.onLine);
             const [isLoadingDB, setIsLoadingDB] = useState(true);
             const [view, setView] = useState('landing');

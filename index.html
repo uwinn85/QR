@@ -616,7 +616,26 @@
                     }
                 }
             }, [settings.appBackground]);
-
+// Fungsi untuk mengirim data pesanan dan menu ke Cloud Firestore
+const syncDataToCloud = async (newOrders, newMenuItems) => {
+    // Pastikan Firebase sudah siap di window
+    if (window.firebaseDb && window.firebaseFns) {
+        try {
+            const { doc, setDoc } = window.firebaseFns;
+            
+            // Menyimpan data ke database Firestore pada koleksi "restaurant" dan dokumen "main_data"
+            await setDoc(doc(window.firebaseDb, "restaurant", "main_data"), {
+                orders: newOrders,
+                menuItems: newMenuItems,
+                updatedAt: new Date().toISOString()
+            }, { merge: true }); // merge: true agar data lain tidak tertimpa total
+            
+            console.log("Data berhasil disinkronkan ke Cloud Firestore!");
+        } catch (e) {
+            console.error("Gagal sinkronisasi ke cloud:", e);
+        }
+    }
+};
             const generateOrderId = () => {
                 const prefix = (settings.orderPrefix || 'ORD').trim().toUpperCase() || 'ORD';
                 // Prefer the familiar four-digit ID; fall back to a timestamp-based ID on collision.

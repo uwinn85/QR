@@ -8,29 +8,6 @@
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-    <!-- Firebase App (Modular CDN v10) -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { getFirestore, collection, setDoc, doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-  // Konfigurasi Firebase Anda
-  const firebaseConfig = {
-  apiKey: "AIzaSyCgs7b_sjfwLxLhsnWbnSYwLDVPul529FE",
-  authDomain: "resto-qr-pro-web.firebaseapp.com",
-  projectId: "resto-qr-pro-web",
-  storageBucket: "resto-qr-pro-web.firebasestorage.app",
-  messagingSenderId: "324178057429",
-  appId: "1:324178057429:web:4a96466c6b7d2a8f5e6a5c"
-  };
-
-  // Inisialisasi Firebase
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  // Ekspos ke global window agar dapat diakses oleh komponen React Resto QR Pro
-  window.firebaseDb = db;
-  window.firebaseFns = { collection, setDoc, doc, getDoc, onSnapshot };
-</script>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -498,35 +475,7 @@
             const closeCustomAlert = () => {
                 setModalConfig({ isOpen: false, title: '', message: '', onConfirm: null });
             };
-    // ==========================================
-    // TAMBAHKAN KODE INI UNTUK SINKRONISASI FIREBASE
-    // ==========================================
-    useEffect(() => {
-        // Cek apakah Firebase sudah diinisialisasi melalui CDN di atas
-        if (window.firebaseDb && window.firebaseFns) {
-            const { doc, onSnapshot } = window.firebaseFns;
-            
-            // Mendengarkan perubahan data secara real-time pada dokumen "restaurant/main_data" di Firestore
-            const unsubscribe = onSnapshot(doc(window.firebaseDb, "restaurant", "main_data"), (docSnap) => {
-                if (docSnap.exists()) {
-                    const cloudData = docSnap.data();
-                    
-                    // Jika ada data pesanan baru di cloud, perbarui state pesanan otomatis
-                    if (cloudData.orders && Array.isArray(cloudData.orders)) {
-                        setOrders(cloudData.orders);
-                    }
-                    // Jika ada pembaruan menu di cloud, perbarui katalog menu otomatis
-                    if (cloudData.menuItems && Array.isArray(cloudData.menuItems)) {
-                        setMenuItems(cloudData.menuItems);
-                    }
-                }
-            });
 
-            // Membersihkan listener saat komponen dilepas
-            return () => unsubscribe();
-        }
-    }, []);
-    // ==========================================
             useEffect(() => {
                 const handleOffline = () => setIsOffline(true);
                 const handleOnline = () => setIsOffline(false);

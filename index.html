@@ -37,8 +37,6 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
     :root {
@@ -59,320 +57,330 @@
   </style>
 </head>
 <body>
-<div id="root"></div>
+  <div id="root"></div>
 
-<script type="text/babel">
-  const { useState, useEffect, useRef } = React;
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
 
-  const DB_NAME = 'RestoQR_DB_v4';
-  const STORE_NAME = 'app_data';
-  const SYNC_CHANNEL = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('resto_qr_db_sync_channel_v4') : null;
+    const DB_NAME = 'RestoQR_DB_v4';
+    const STORE_NAME = 'app_data';
+    const STORAGE_KEY = 'resto_qr_main_data_v1';
+    const SYNC_CHANNEL = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('resto_qr_db_sync_channel_v4') : null;
 
-  const initDB = () => new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
-    request.onsuccess = () => {
-      const db = request.result;
-      db.onversionchange = () => db.close();
-      resolve(db);
-    };
-    request.onerror = () => reject(request.error);
-  });
+    const DEFAULT_MENU = [
+      { id: 1, name: 'Nasi Goreng Spesial', price: 45000, category: 'Makanan Utama', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Nasi+Goreng', description: 'Nasi goreng dengan telur dan ayam.' },
+      { id: 2, name: 'Sop Buntut Bakar', price: 85000, category: 'Makanan Utama', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Sop+Buntut', description: 'Sop buntut sapi pilihan.' },
+      { id: 3, name: 'Es Teh Manis', price: 10000, category: 'Minuman', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Es+Teh', description: 'Teh melati seduh segar.' }
+    ];
 
-  const dbGet = async (key) => {
-    try {
-      const db = await initDB();
-      return await new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const req = store.get(key);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-        tx.oncomplete = () => db.close();
-        tx.onerror = () => { db.close(); reject(tx.error || req.error); };
-      });
-    } catch (error) {
-      console.error('DB Get Error:', error);
-      return null;
-    }
-  };
+    const DEFAULT_ORDERS = [];
 
-  const dbSet = async (key, value, broadcast = false) => {
-    try {
-      const db = await initDB();
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        const req = store.put(value, key);
-        req.onerror = () => reject(req.error);
-        tx.oncomplete = () => {
-          db.close();
-          if (broadcast && SYNC_CHANNEL) {
-            try { SYNC_CHANNEL.postMessage({ key, value }); } catch (e) { console.warn('Broadcast failed:', e); }
-          }
-          resolve();
-        };
-        tx.onerror = () => { db.close(); reject(tx.error || req.error); };
-      });
-    } catch (error) {
-      console.error('DB Set Error:', error);
-    }
-  };
-
-  const DEFAULT_MENU = [
-    { id: 1, name: 'Nasi Goreng Spesial', price: 45000, category: 'Makanan Utama', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Nasi+Goreng', description: 'Nasi goreng dengan telur dan ayam.' },
-    { id: 2, name: 'Sop Buntut Bakar', price: 85000, category: 'Makanan Utama', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Sop+Buntut', description: 'Sop buntut sapi pilihan.' },
-    { id: 3, name: 'Es Teh Manis', price: 10000, category: 'Minuman', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Es+Teh', description: 'Teh melati seduh segar.' }
-  ];
-
-  const DEFAULT_ORDERS = [];
-
-  function App() {
-    const [isLoadingDB, setIsLoadingDB] = useState(true);
-    const [menuItems, setMenuItems] = useState(DEFAULT_MENU);
-    const [orders, setOrders] = useState(DEFAULT_ORDERS);
-    const [customerCart, setCustomerCart] = useState([]);
-    const [customerName, setCustomerName] = useState('');
-    const [paymentMethod, setPaymentMethod] = useState('qris');
-    const syncLockRef = useRef(false);
-
-    useEffect(() => {
-      const loadData = async () => {
-        try {
-          const dbMenu = await dbGet('menuItems');
-          if (dbMenu && Array.isArray(dbMenu)) setMenuItems(dbMenu);
-          const dbOrders = await dbGet('orders');
-          if (dbOrders && Array.isArray(dbOrders)) setOrders(dbOrders);
-        } catch (error) {
-          console.error('Load data error:', error);
-        } finally {
-          setIsLoadingDB(false);
+    const initDB = () => new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
         }
       };
-      loadData();
-
-      const handleSyncMessage = (event) => {
-        const message = event.data;
-        if (!message || typeof message.key !== 'string') return;
-        if (message.key === 'menuItems' && Array.isArray(message.value)) setMenuItems(message.value);
-        if (message.key === 'orders' && Array.isArray(message.value)) setOrders(message.value);
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => db.close();
+        resolve(db);
       };
+      request.onerror = () => reject(request.error);
+    });
 
-      if (SYNC_CHANNEL) SYNC_CHANNEL.onmessage = handleSyncMessage;
-
-      return () => {
-        if (SYNC_CHANNEL) SYNC_CHANNEL.onmessage = null;
-      };
-    }, []);
-
-    useEffect(() => {
-      if (!isLoadingDB) dbSet('menuItems', menuItems, true);
-    }, [menuItems, isLoadingDB]);
-
-    useEffect(() => {
-      if (!isLoadingDB) dbSet('orders', orders, true);
-    }, [orders, isLoadingDB]);
-
-    const syncDataToCloud = async (newOrders, newMenuItems) => {
-      if (!window.firebaseDb || !window.firebaseFns || syncLockRef.current) return;
-
+    const dbGet = async (key) => {
       try {
-        syncLockRef.current = true;
-        const { setDoc, doc } = window.firebaseFns;
-        const ref = doc(window.firebaseDb, 'restaurant', 'main_data');
-        await setDoc(ref, {
-          orders: newOrders,
-          menuItems: newMenuItems,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-        console.log('Data synced to Firestore');
+        const db = await initDB();
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readonly');
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.get(key);
+          req.onsuccess = () => resolve(req.result ?? null);
+          req.onerror = () => reject(req.error);
+          tx.oncomplete = () => db.close();
+          tx.onerror = () => { db.close(); reject(tx.error || req.error); };
+        });
       } catch (error) {
-        console.error('Firestore sync failed:', error);
-      } finally {
-        syncLockRef.current = false;
+        return null;
       }
     };
 
-    useEffect(() => {
-      if (!window.firebaseDb || !window.firebaseFns || isLoadingDB) return;
-
-      const { onSnapshot, doc } = window.firebaseFns;
-      const unsubscribe = onSnapshot(doc(window.firebaseDb, 'restaurant', 'main_data'), (docSnap) => {
-        if (!docSnap.exists()) return;
-
-        const cloudData = docSnap.data();
-        if (Array.isArray(cloudData.orders) && cloudData.orders.length !== orders.length) {
-          setOrders(cloudData.orders);
-        }
-        if (Array.isArray(cloudData.menuItems) && cloudData.menuItems.length !== menuItems.length) {
-          setMenuItems(cloudData.menuItems);
-        }
-      });
-
-      return () => unsubscribe();
-    }, [isLoadingDB]);
-
-    useEffect(() => {
-      if (!isLoadingDB) {
-        syncDataToCloud(orders, menuItems);
+    const dbSet = async (key, value, broadcast = false) => {
+      try {
+        const db = await initDB();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.put(value, key);
+          req.onerror = () => reject(req.error);
+          tx.oncomplete = () => {
+            db.close();
+            if (broadcast && SYNC_CHANNEL) {
+              try { SYNC_CHANNEL.postMessage({ key, value }); } catch (e) { console.warn('Broadcast failed:', e); }
+            }
+            resolve();
+          };
+          tx.onerror = () => { db.close(); reject(tx.error || req.error); };
+        });
+      } catch (error) {
+        console.error('DB Set Error:', error);
       }
-    }, [orders, menuItems, isLoadingDB]);
-
-    const addToCart = (item) => {
-      setCustomerCart((prev) => {
-        const exists = prev.find((x) => x.id === item.id);
-        if (exists) {
-          return prev.map((x) => x.id === item.id ? { ...x, quantity: x.quantity + 1 } : x);
-        }
-        return [...prev, { ...item, quantity: 1 }];
-      });
     };
 
-    const checkout = () => {
-      if (!customerName.trim()) {
-        alert('Nama pelanggan harus diisi');
-        return;
-      }
-      if (customerCart.length === 0) {
-        alert('Keranjang masih kosong');
-        return;
-      }
+    const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-      const subtotal = customerCart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      const tax = subtotal * 0.11;
-      const service = subtotal * 0.05;
-      const total = subtotal + tax + service;
+    function App() {
+      const [menuItems, setMenuItems] = useState(DEFAULT_MENU);
+      const [orders, setOrders] = useState(DEFAULT_ORDERS);
+      const [customerCart, setCustomerCart] = useState([]);
+      const [customerName, setCustomerName] = useState('');
+      const [paymentMethod, setPaymentMethod] = useState('qris');
+      const [isLoading, setIsLoading] = useState(true);
+      const firebaseSourceRef = useRef(false);
+      const syncLockRef = useRef(false);
 
-      const newOrder = {
-        id: `ORD-${Date.now().toString().slice(-8)}`,
-        customerName: customerName.trim(),
-        table: 'Meja 1',
-        orderType: 'dine-in',
-        items: customerCart,
-        subtotal,
-        tax,
-        service,
-        total,
-        paymentMethod,
-        notes: '',
-        status: 'unverified',
-        time: new Date().toISOString(),
-        source: 'QR'
+      const persistToIndexedDB = async (nextMenu, nextOrders) => {
+        await dbSet(STORAGE_KEY, { menuItems: nextMenu, orders: nextOrders }, true);
       };
 
-      setOrders((prev) => [newOrder, ...prev]);
-      setCustomerCart([]);
-      setCustomerName('');
-      setPaymentMethod('qris');
-    };
+      const syncToFirebase = async (nextMenu, nextOrders) => {
+        if (!window.firebaseDb || !window.firebaseFns || syncLockRef.current) return;
+        try {
+          syncLockRef.current = true;
+          const { setDoc, doc } = window.firebaseFns;
+          await setDoc(doc(window.firebaseDb, 'restaurant', 'main_data'), {
+            menuItems: nextMenu,
+            orders: nextOrders,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (error) {
+          console.error('Firestore sync failed:', error);
+        } finally {
+          syncLockRef.current = false;
+        }
+      };
 
-    return (
-      <div className="min-h-screen p-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="glass rounded-3xl shadow-xl p-6 mb-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-black text-slate-800">Resto QR Pro</h1>
-                <p className="text-slate-600 mt-2">Firebase sync status: {window.firebaseDb && window.firebaseFns ? 'Aktif' : 'Belum aktif'}</p>
-              </div>
-              <div className="bg-green-100 text-green-700 px-4 py-2 rounded-full text-sm font-semibold">
-                {isLoadingDB ? 'Loading...' : 'Ready'}
+      useEffect(() => {
+        const loadInitialData = async () => {
+          try {
+            const cached = await dbGet(STORAGE_KEY);
+            if (cached && Array.isArray(cached.menuItems)) {
+              setMenuItems(cached.menuItems);
+            }
+            if (cached && Array.isArray(cached.orders)) {
+              setOrders(cached.orders);
+            }
+          } catch (error) {
+            console.error('Load IndexedDB failed:', error);
+          } finally {
+            setIsLoading(false);
+          }
+        };
+
+        loadInitialData();
+
+        if (SYNC_CHANNEL) {
+          const handleSyncMessage = (event) => {
+            const message = event.data;
+            if (!message || typeof message.key !== 'string') return;
+            if (message.key === STORAGE_KEY && message.value && typeof message.value === 'object') {
+              if (Array.isArray(message.value.menuItems)) setMenuItems(message.value.menuItems);
+              if (Array.isArray(message.value.orders)) setOrders(message.value.orders);
+            }
+          };
+          SYNC_CHANNEL.onmessage = handleSyncMessage;
+          return () => { SYNC_CHANNEL.onmessage = null; };
+        }
+      }, []);
+
+      useEffect(() => {
+        if (!window.firebaseDb || !window.firebaseFns || isLoading) return;
+
+        const { onSnapshot, doc } = window.firebaseFns;
+        const unsubscribe = onSnapshot(doc(window.firebaseDb, 'restaurant', 'main_data'), (docSnap) => {
+          if (!docSnap.exists()) return;
+
+          const cloudData = docSnap.data();
+          const nextMenu = Array.isArray(cloudData.menuItems) ? cloudData.menuItems : menuItems;
+          const nextOrders = Array.isArray(cloudData.orders) ? cloudData.orders : orders;
+
+          if (deepEqual(menuItems, nextMenu) && deepEqual(orders, nextOrders)) return;
+
+          firebaseSourceRef.current = true;
+          setMenuItems(nextMenu);
+          setOrders(nextOrders);
+          persistToIndexedDB(nextMenu, nextOrders);
+        });
+
+        return () => unsubscribe();
+      }, [isLoading, menuItems, orders]);
+
+      useEffect(() => {
+        if (isLoading || firebaseSourceRef.current) {
+          firebaseSourceRef.current = false;
+          return;
+        }
+
+        persistToIndexedDB(menuItems, orders);
+        syncToFirebase(menuItems, orders);
+      }, [menuItems, orders, isLoading]);
+
+      const addToCart = (item) => {
+        setCustomerCart((prev) => {
+          const exists = prev.find((x) => x.id === item.id);
+          if (exists) {
+            return prev.map((x) => x.id === item.id ? { ...x, quantity: x.quantity + 1 } : x);
+          }
+          return [...prev, { ...item, quantity: 1 }];
+        });
+      };
+
+      const checkout = () => {
+        if (!customerName.trim()) {
+          alert('Nama pelanggan harus diisi');
+          return;
+        }
+        if (customerCart.length === 0) {
+          alert('Keranjang masih kosong');
+          return;
+        }
+
+        const subtotal = customerCart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const tax = subtotal * 0.11;
+        const service = subtotal * 0.05;
+        const total = subtotal + tax + service;
+
+        const newOrder = {
+          id: `ORD-${Date.now().toString().slice(-8)}`,
+          customerName: customerName.trim(),
+          table: 'Meja 1',
+          orderType: 'dine-in',
+          items: customerCart,
+          subtotal,
+          tax,
+          service,
+          total,
+          paymentMethod,
+          notes: '',
+          status: 'unverified',
+          time: new Date().toISOString(),
+          source: 'QR'
+        };
+
+        const nextOrders = [newOrder, ...orders];
+        setOrders(nextOrders);
+        setCustomerCart([]);
+        setCustomerName('');
+        setPaymentMethod('qris');
+      };
+
+      return (
+        <div className="min-h-screen p-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="glass rounded-3xl shadow-xl p-6 mb-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-3xl font-black text-slate-800">Resto QR Pro</h1>
+                  <p className="text-slate-600 mt-2">
+                    Firebase sync status: {window.firebaseDb && window.firebaseFns ? 'Aktif' : 'Belum aktif'}
+                  </p>
+                </div>
+                <div className="bg-green-100 text-green-700 px-4 py-2 rounded-full text-sm font-semibold">
+                  {isLoading ? 'Loading...' : 'Ready'}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="grid lg:grid-cols-[1.3fr_0.7fr] gap-6">
-            <div className="space-y-6">
-              <div className="glass rounded-3xl shadow-xl p-5">
-                <h2 className="text-xl font-bold mb-4">Menu</h2>
-                <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {menuItems.map((item) => (
-                    <div key={item.id} className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
-                      <img src={item.image || 'https://placehold.co/400x400/cccccc/ffffff?text=Menu'} alt={item.name} className="w-full h-36 object-cover" />
-                      <div className="p-4">
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <h3 className="font-bold text-slate-800">{item.name}</h3>
-                          <span className="text-brand-600 font-semibold">Rp {Number(item.price || 0).toLocaleString('id-ID')}</span>
+            <div className="grid lg:grid-cols-[1.3fr_0.7fr] gap-6">
+              <div className="space-y-6">
+                <div className="glass rounded-3xl shadow-xl p-5">
+                  <h2 className="text-xl font-bold mb-4">Menu</h2>
+                  <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {menuItems.map((item) => (
+                      <div key={item.id} className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                        <img src={item.image || 'https://placehold.co/400x400/cccccc/ffffff?text=Menu'} alt={item.name} className="w-full h-36 object-cover" />
+                        <div className="p-4">
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <h3 className="font-bold text-slate-800">{item.name}</h3>
+                            <span className="text-brand-600 font-semibold">Rp {Number(item.price || 0).toLocaleString('id-ID')}</span>
+                          </div>
+                          <p className="text-xs text-slate-500 mb-3">{item.category}</p>
+                          <button
+                            onClick={() => addToCart(item)}
+                            className="w-full rounded-xl bg-brand-600 text-white py-2 font-semibold hover:bg-brand-700"
+                          >
+                            + Tambah
+                          </button>
                         </div>
-                        <p className="text-xs text-slate-500 mb-3">{item.category}</p>
-                        <button
-                          onClick={() => addToCart(item)}
-                          className="w-full rounded-xl bg-brand-600 text-white py-2 font-semibold hover:bg-brand-700"
-                        >
-                          + Tambah
-                        </button>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="space-y-6">
-              <div className="glass rounded-3xl shadow-xl p-5">
-                <h2 className="text-xl font-bold mb-4">Checkout</h2>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Nama pelanggan"
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2 mb-3"
-                />
+              <div className="space-y-6">
+                <div className="glass rounded-3xl shadow-xl p-5">
+                  <h2 className="text-xl font-bold mb-4">Checkout</h2>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Nama pelanggan"
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 mb-3"
+                  />
 
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2 mb-3"
-                >
-                  <option value="qris">QRIS</option>
-                  <option value="cash">Tunai</option>
-                </select>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 mb-3"
+                  >
+                    <option value="qris">QRIS</option>
+                    <option value="cash">Tunai</option>
+                  </select>
 
-                <div className="space-y-2 mb-4">
-                  {customerCart.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between text-sm">
-                      <span>{item.name} x {item.quantity}</span>
-                      <span>Rp {(item.price * item.quantity).toLocaleString('id-ID')}</span>
-                    </div>
-                  ))}
+                  <div className="space-y-2 mb-4">
+                    {customerCart.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between text-sm">
+                        <span>{item.name} x {item.quantity}</span>
+                        <span>Rp {(item.price * item.quantity).toLocaleString('id-ID')}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={checkout}
+                    className="w-full rounded-xl bg-slate-900 text-white py-3 font-bold hover:bg-slate-800"
+                  >
+                    Proses Pesanan
+                  </button>
                 </div>
 
-                <button
-                  onClick={checkout}
-                  className="w-full rounded-xl bg-slate-900 text-white py-3 font-bold hover:bg-slate-800"
-                >
-                  Proses Pesanan
-                </button>
-              </div>
-
-              <div className="glass rounded-3xl shadow-xl p-5">
-                <h2 className="text-xl font-bold mb-4">Order Terbaru</h2>
-                <div className="space-y-3 max-h-[300px] overflow-auto">
-                  {orders.slice(0, 6).map((order) => (
-                    <div key={order.id} className="border border-slate-200 rounded-xl p-3 bg-white">
-                      <div className="flex justify-between items-center">
-                        <span className="font-semibold">{order.id}</span>
-                        <span className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-full">{order.status}</span>
+                <div className="glass rounded-3xl shadow-xl p-5">
+                  <h2 className="text-xl font-bold mb-4">Order Terbaru</h2>
+                  <div className="space-y-3 max-h-[300px] overflow-auto">
+                    {orders.slice(0, 6).map((order) => (
+                      <div key={order.id} className="border border-slate-200 rounded-xl p-3 bg-white">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold">{order.id}</span>
+                          <span className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-full">{order.status}</span>
+                        </div>
+                        <p className="text-sm text-slate-600 mt-1">{order.customerName}</p>
+                        <p className="text-sm text-slate-700 mt-1">Rp {Number(order.total || 0).toLocaleString('id-ID')}</p>
                       </div>
-                      <p className="text-sm text-slate-600 mt-1">{order.customerName}</p>
-                      <p className="text-sm text-slate-700 mt-1">Rp {Number(order.total || 0).toLocaleString('id-ID')}</p>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-</script>
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
 </body>
 </html>

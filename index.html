@@ -74,83 +74,16 @@
 <body>
     <div id="root"></div>
 
+    <script>
+        window.firebaseApiReady = new Promise((resolve, reject) => {
+            window.__resolveFirebaseApi = resolve;
+            window.__rejectFirebaseApi = reject;
+        });
+    </script>
+    <script type="module" src="/src/firebase.js"></script>
+
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
-
-        // ==========================================
-        // DATABASE LAYER (IndexedDB)
-        // ==========================================
-        const DB_NAME = 'RestoQR_DB_v4';
-        const DB_VERSION = 1;
-        const STORE_NAME = 'app_data';
-        
-        const SYNC_CHANNEL = typeof BroadcastChannel !== 'undefined'
-            ? new BroadcastChannel('resto_qr_db_sync_channel_v4')
-            : null;
-
-        const initDB = () => {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(DB_NAME, DB_VERSION);
-                request.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains(STORE_NAME)) {
-                        db.createObjectStore(STORE_NAME);
-                    }
-                };
-                request.onsuccess = () => {
-                    const db = request.result;
-                    db.onversionchange = () => db.close();
-                    resolve(db);
-                };
-                request.onerror = () => reject(request.error);
-            });
-        };
-
-        const dbGet = async (key) => {
-            try {
-                const db = await initDB();
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction(STORE_NAME, 'readonly');
-                    const store = tx.objectStore(STORE_NAME);
-                    const req = store.get(key);
-                    req.onsuccess = () => resolve(req.result);
-                    req.onerror = () => reject(req.error);
-                    tx.oncomplete = () => db.close();
-                    tx.onerror = () => { db.close(); reject(tx.error || req.error); };
-                    tx.onabort = () => { db.close(); reject(tx.error || new Error('Transaksi database dibatalkan')); };
-                });
-            } catch (error) {
-                console.error("DB Get Error:", error);
-                return null;
-            }
-        };
-
-        const dbSet = async (key, value, broadcast = false) => {
-            try {
-                const db = await initDB();
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction(STORE_NAME, 'readwrite');
-                    const store = tx.objectStore(STORE_NAME);
-                    const req = store.put(value, key);
-                    req.onsuccess = () => {
-                        // Wait for transaction completion before reporting a successful save.
-                    };
-                    req.onerror = () => reject(req.error);
-                    tx.oncomplete = () => {
-                        db.close();
-                        if (broadcast && SYNC_CHANNEL) {
-                            try { SYNC_CHANNEL.postMessage({ key, value }); }
-                            catch (error) { console.warn('Broadcast sinkronisasi gagal:', error); }
-                        }
-                        resolve();
-                    };
-                    tx.onerror = () => { db.close(); reject(tx.error || req.error); };
-                    tx.onabort = () => { db.close(); reject(tx.error || new Error('Transaksi database dibatalkan')); };
-                });
-            } catch (error) {
-                console.error("DB Set Error:", error);
-            }
-        };
 
         // ==========================================
         // DEFAULT DATA 
@@ -195,12 +128,6 @@
             { id: 5, name: 'Es Kopi Susu Aren', price: 25000, category: 'Minuman', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Kopi+Susu', description: 'Espresso, susu, dan gula aren asli.' },
             { id: 6, name: 'Tahu Cabe Garam', price: 22000, category: 'Camilan', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Tahu+Garam', description: 'Tahu krispi tumis bawang putih dan cabe rawit.' },
             { id: 7, name: 'Pisang Goreng Keju', price: 20000, category: 'Penutup', image: 'https://placehold.co/400x400/aa1c22/ffffff?text=Pisang+Goreng', description: 'Pisang kepok goreng dengan taburan keju melimpah.' }
-        ];
-
-        const DEFAULT_USERS = [
-            { id: 1, username: 'admin', pin: '123456', role: 'admin', name: 'Administrator Utama' },
-            { id: 2, username: 'kasir1', pin: '111111', role: 'cashier', name: 'Kasir Shift 1' },
-            { id: 3, username: 'kasir2', pin: '222222', role: 'cashier', name: 'Kasir Shift 2' }
         ];
 
         // Web Audio API Sound Generator for Order Call Notification
@@ -407,26 +334,68 @@
             return Number(cleaned) || 0;
         };
 
+        const stableSerialize = (value) => {
+            if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
+            if (value && typeof value === 'object') {
+                return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(',')}}`;
+            }
+            return JSON.stringify(value);
+        };
+
+        const getFirebaseErrorMessage = (error) => {
+            switch (error?.code) {
+                case 'permission-denied':
+                    return 'Akses Firestore ditolak. Pastikan firestore.rules sudah dipasang pada proyek Firebase.';
+                case 'auth/operation-not-allowed':
+                case 'auth/admin-restricted-operation':
+                    return 'Aktifkan Anonymous sign-in untuk pelanggan dan Email/Password untuk staff di Firebase Authentication.';
+                case 'auth/invalid-credential':
+                case 'auth/user-not-found':
+                case 'auth/wrong-password':
+                    return 'Email atau kata sandi tidak benar.';
+                case 'auth/invalid-email':
+                    return 'Format email tidak valid.';
+                case 'auth/weak-password':
+                    return 'Kata sandi harus berisi minimal 8 karakter.';
+                case 'auth/email-already-in-use':
+                    return 'Email sudah digunakan oleh akun Firebase lain.';
+                case 'auth/too-many-requests':
+                    return 'Terlalu banyak percobaan. Tunggu beberapa saat lalu coba lagi.';
+                case 'auth/unauthorized-domain':
+                    return 'Domain aplikasi belum diizinkan di Firebase Authentication.';
+                case 'auth/staff-profile-not-found':
+                    return 'Akun belum memiliki profil staff di Firestore. Tambahkan profil admin pertama di Firebase Console.';
+                default:
+                    return error?.message || 'Terjadi kesalahan saat menghubungi Firebase.';
+            }
+        };
+
         function App() {
 		
             const [isOffline, setIsOffline] = useState(!navigator.onLine);
             const [isLoadingDB, setIsLoadingDB] = useState(true);
+            const [firebaseUser, setFirebaseUser] = useState(null);
+            const [firebaseError, setFirebaseError] = useState('');
+            const [authMessage, setAuthMessage] = useState('');
             const [view, setView] = useState('landing');
             const [adminTab, setAdminTab] = useState('pos');
-            const [currentUser, setCurrentUser] = useState(null); 
+            const [currentUser, setCurrentUser] = useState(null);
+            const firebaseApiRef = useRef(null);
+            const cloudConfigRef = useRef({});
+            const customerQrSessionRef = useRef(Boolean(new URLSearchParams(window.location.search).get('table')));
             
             const [settings, setSettings] = useState(DEFAULT_SETTINGS);
             const [paymentMethods, setPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
             const [menuItems, setMenuItems] = useState(DEFAULT_MENU);
             const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
             const [orders, setOrders] = useState([]);
-            const [staffUsers, setStaffUsers] = useState(DEFAULT_USERS);
+            const [staffUsers, setStaffUsers] = useState([]);
             const [tables, setTables] = useState([
                 { id: 'T1', name: 'Meja 1', link: window.location.origin + window.location.pathname + '?table=1' },
                 { id: 'T2', name: 'Meja 2', link: window.location.origin + window.location.pathname + '?table=2' }
             ]);
 
-            const [loginForm, setLoginForm] = useState({ username: '', pin: '' });
+            const [loginForm, setLoginForm] = useState({ email: '', password: '' });
             const [customerTable, setCustomerTable] = useState('');
             const [customerOrderType, setCustomerOrderType] = useState('dine-in');
             const [customerName, setCustomerName] = useState(''); 
@@ -452,8 +421,7 @@
 
             const [showStaffModal, setShowStaffModal] = useState(false);
             const [editingStaff, setEditingStaff] = useState(null);
-            const [staffForm, setStaffForm] = useState({ username: '', pin: '', name: '', role: 'cashier' });
-            const [visibleStaffPins, setVisibleStaffPins] = useState({});
+            const [staffForm, setStaffForm] = useState({ username: '', email: '', password: '', name: '', role: 'cashier' });
 
             const [showPaymentModal, setShowPaymentModal] = useState(false);
             const [editingPayment, setEditingPayment] = useState(null);
@@ -481,74 +449,204 @@
                 const handleOnline = () => setIsOffline(false);
                 window.addEventListener('offline', handleOffline);
                 window.addEventListener('online', handleOnline);
-
-                const loadAllDataFromDB = async () => {
-                    try {
-                        const dbSettings = await dbGet('settings');
-                        if (dbSettings) setSettings(dbSettings);
-
-                        const dbPayments = await dbGet('paymentMethods');
-                        if (dbPayments) setPaymentMethods(dbPayments);
-
-                        const dbMenu = await dbGet('menuItems');
-                        if (dbMenu) setMenuItems(dbMenu);
-
-                        const dbOrders = await dbGet('orders');
-                        if (dbOrders) setOrders(dbOrders);
-
-                        const dbTables = await dbGet('tables');
-                        if (dbTables) setTables(dbTables);
-
-                        const dbStaff = await dbGet('staffUsers');
-                        if (dbStaff) setStaffUsers(dbStaff);
-
-                        const dbCategories = await dbGet('categories');
-                        if (dbCategories) setCategories(dbCategories);
-                    } catch (err) {
-                        console.error("Error loading IndexedDB data:", err);
-                    } finally {
-                        setIsLoadingDB(false);
-                    }
+                return () => {
+                    window.removeEventListener('offline', handleOffline);
+                    window.removeEventListener('online', handleOnline);
                 };
+            }, []);
 
-                loadAllDataFromDB();
-
-                const urlParams = new URLSearchParams(window.location.search);
-                const tableParam = urlParams.get('table');
+            useEffect(() => {
+                const tableParam = new URLSearchParams(window.location.search).get('table');
                 if (tableParam) {
                     setCustomerTable(tableParam);
                     setView('customer');
                     window.history.pushState({}, '', window.location.pathname);
                 }
+            }, []);
 
-                const handleSyncMessage = (event) => {
-                    const message = event.data;
-                    if (!message || typeof message.key !== 'string') return;
-                    const { key, value } = message;
-                    if (key === 'orders' && Array.isArray(value)) setOrders(value);
-                    if (key === 'menuItems' && Array.isArray(value)) setMenuItems(value);
-                    if (key === 'settings' && value && typeof value === 'object' && !Array.isArray(value)) setSettings(value);
-                    if (key === 'paymentMethods' && Array.isArray(value)) setPaymentMethods(value);
-                    if (key === 'tables' && Array.isArray(value)) setTables(value);
-                    if (key === 'staffUsers' && Array.isArray(value)) setStaffUsers(value);
-                    if (key === 'categories' && Array.isArray(value)) setCategories(value);
+            useEffect(() => {
+                let disposed = false;
+                let authUnsubscribe = () => {};
+                let restaurantUnsubscribe = () => {};
+                let ordersUnsubscribe = () => {};
+                let staffUnsubscribe = () => {};
+                let authRevision = 0;
+                let anonymousSignInPending = false;
+                let legacyMigrationAttemptedUid = null;
+
+                const stopDataListeners = () => {
+                    restaurantUnsubscribe();
+                    ordersUnsubscribe();
+                    staffUnsubscribe();
+                    restaurantUnsubscribe = () => {};
+                    ordersUnsubscribe = () => {};
+                    staffUnsubscribe = () => {};
                 };
-                if (SYNC_CHANNEL) SYNC_CHANNEL.onmessage = handleSyncMessage;
 
+                const reportConnectionError = (error) => {
+                    if (!disposed) setFirebaseError(getFirebaseErrorMessage(error));
+                };
+
+                const startFirebase = async () => {
+                    try {
+                        const api = await window.firebaseApiReady;
+                        if (disposed) return;
+                        firebaseApiRef.current = api;
+
+                        authUnsubscribe = api.observeAuth(async (user) => {
+                            const revision = ++authRevision;
+                            if (disposed) return;
+                            setFirebaseUser(user);
+                            stopDataListeners();
+
+                            if (!user) {
+                                setCurrentUser(null);
+                                setStaffUsers([]);
+                                setIsLoadingDB(true);
+                                if (!anonymousSignInPending) {
+                                    anonymousSignInPending = true;
+                                    api.ensureAnonymousSession()
+                                        .catch((error) => {
+                                            reportConnectionError(error);
+                                            if (!disposed) setIsLoadingDB(false);
+                                        })
+                                        .finally(() => { anonymousSignInPending = false; });
+                                }
+                                return;
+                            }
+
+                            if (customerQrSessionRef.current) {
+                                customerQrSessionRef.current = false;
+                                if (!user.isAnonymous) {
+                                    await api.signOut().catch(reportConnectionError);
+                                    return;
+                                }
+                            }
+
+                            let profile = null;
+                            if (!user.isAnonymous) {
+                                try {
+                                    profile = await api.getStaffProfile(user.uid);
+                                } catch (error) {
+                                    if (!disposed && revision === authRevision) {
+                                        reportConnectionError(error);
+                                        setIsLoadingDB(false);
+                                        await api.signOut().catch(() => {});
+                                    }
+                                    return;
+                                }
+
+                                if (disposed || revision !== authRevision) return;
+                                if (!profile) {
+                                    setCurrentUser(null);
+                                    setStaffUsers([]);
+                                    setIsLoadingDB(false);
+                                    setAuthMessage(getFirebaseErrorMessage({ code: 'auth/staff-profile-not-found' }));
+                                    await api.signOut().catch(reportConnectionError);
+                                    return;
+                                }
+                            }
+
+                            if (disposed || revision !== authRevision) return;
+                            setCurrentUser(profile ? { ...profile, id: user.uid, uid: user.uid, email: profile.email || user.email } : null);
+                            if (profile) setAuthMessage('');
+                            cloudConfigRef.current = {};
+                            setIsLoadingDB(true);
+
+                            try {
+                                restaurantUnsubscribe = api.subscribeRestaurant((cloudData, documentExists) => {
+                                    if (disposed || revision !== authRevision) return;
+                                    const data = cloudData && typeof cloudData === 'object' ? cloudData : {};
+                                    const configFields = ['settings', 'paymentMethods', 'menuItems', 'tables', 'categories'];
+                                    const emptySetupDocument = configFields.every((field) => {
+                                        if (data[field] === undefined) return true;
+                                        if (field === 'settings' && data.settings && typeof data.settings === 'object' && !Array.isArray(data.settings)) {
+                                            return Object.keys(data.settings).length === 0;
+                                        }
+                                        return Array.isArray(data[field]) && data[field].length === 0;
+                                    });
+                                    if ((!documentExists || emptySetupDocument) && profile?.role === 'admin' && legacyMigrationAttemptedUid !== user.uid) {
+                                        legacyMigrationAttemptedUid = user.uid;
+                                        api.migrateLegacyData(user.uid).then((migration) => {
+                                            if (disposed || revision !== authRevision) return;
+                                            const migratedConfig = migration?.config || {};
+                                            cloudConfigRef.current = migratedConfig;
+                                            if (migratedConfig.settings && typeof migratedConfig.settings === 'object' && !Array.isArray(migratedConfig.settings)) {
+                                                setSettings({ ...DEFAULT_SETTINGS, ...migratedConfig.settings });
+                                            }
+                                            if (Array.isArray(migratedConfig.paymentMethods)) setPaymentMethods(migratedConfig.paymentMethods);
+                                            if (Array.isArray(migratedConfig.menuItems)) setMenuItems(migratedConfig.menuItems);
+                                            if (Array.isArray(migratedConfig.tables)) setTables(migratedConfig.tables);
+                                            if (Array.isArray(migratedConfig.categories)) setCategories(migratedConfig.categories);
+                                            setFirebaseError('');
+                                            setIsLoadingDB(false);
+                                            if (migration?.hasLegacyStaff) {
+                                                showCustomAlert('Akun Staff Perlu Dibuat Ulang', 'Data pengaturan dan pesanan lama telah dipindahkan. Akun staff lama memakai PIN lokal dan harus dibuat ulang melalui Firebase Auth.');
+                                            }
+                                        }).catch((error) => {
+                                            if (disposed || revision !== authRevision) return;
+                                            reportConnectionError(error);
+                                            setIsLoadingDB(false);
+                                        });
+                                        return;
+                                    }
+
+                                    cloudConfigRef.current = data;
+                                    if (data.settings && typeof data.settings === 'object' && !Array.isArray(data.settings)) {
+                                        setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
+                                    }
+                                    if (Array.isArray(data.paymentMethods)) setPaymentMethods(data.paymentMethods);
+                                    if (Array.isArray(data.menuItems)) setMenuItems(data.menuItems);
+                                    if (Array.isArray(data.tables)) setTables(data.tables);
+                                    if (Array.isArray(data.categories)) setCategories(data.categories);
+                                    setFirebaseError('');
+                                    setIsLoadingDB(false);
+                                }, (error) => {
+                                    if (disposed || revision !== authRevision) return;
+                                    reportConnectionError(error);
+                                    setIsLoadingDB(false);
+                                });
+
+                                ordersUnsubscribe = api.subscribeOrders(user.uid, Boolean(profile), setOrders, reportConnectionError);
+                                if (profile?.role === 'admin') {
+                                    staffUnsubscribe = api.subscribeStaff(setStaffUsers, reportConnectionError);
+                                } else {
+                                    setStaffUsers([]);
+                                }
+                            } catch (error) {
+                                reportConnectionError(error);
+                                setIsLoadingDB(false);
+                            }
+                        });
+                    } catch (error) {
+                        reportConnectionError(error);
+                        if (!disposed) setIsLoadingDB(false);
+                    }
+                };
+
+                startFirebase();
                 return () => {
-                    window.removeEventListener('offline', handleOffline);
-                    window.removeEventListener('online', handleOnline);
-                    if (SYNC_CHANNEL) SYNC_CHANNEL.onmessage = null;
+                    disposed = true;
+                    authRevision++;
+                    authUnsubscribe();
+                    stopDataListeners();
                 };
             }, []);
 
-            useEffect(() => { if (!isLoadingDB) dbSet('settings', settings, true); }, [settings, isLoadingDB]);
-            useEffect(() => { if (!isLoadingDB) dbSet('paymentMethods', paymentMethods, true); }, [paymentMethods, isLoadingDB]);
-            useEffect(() => { if (!isLoadingDB) dbSet('menuItems', menuItems, true); }, [menuItems, isLoadingDB]);
-            useEffect(() => { if (!isLoadingDB) dbSet('orders', orders, true); }, [orders, isLoadingDB]);
-            useEffect(() => { if (!isLoadingDB) dbSet('tables', tables, true); }, [tables, isLoadingDB]);
-            useEffect(() => { if (!isLoadingDB) dbSet('staffUsers', staffUsers, true); }, [staffUsers, isLoadingDB]);
-            useEffect(() => { if (!isLoadingDB) dbSet('categories', categories, true); }, [categories, isLoadingDB]);
+            const persistConfigField = (field, value) => {
+                const api = firebaseApiRef.current;
+                if (isLoadingDB || currentUser?.role !== 'admin' || !api) return;
+                if (stableSerialize(cloudConfigRef.current[field]) === stableSerialize(value)) return;
+                api.saveRestaurantConfig({ [field]: value }).then(() => {
+                    cloudConfigRef.current = { ...cloudConfigRef.current, [field]: value };
+                }).catch((error) => setFirebaseError(getFirebaseErrorMessage(error)));
+            };
+
+            useEffect(() => { persistConfigField('settings', settings); }, [settings, isLoadingDB, currentUser?.role]);
+            useEffect(() => { persistConfigField('paymentMethods', paymentMethods); }, [paymentMethods, isLoadingDB, currentUser?.role]);
+            useEffect(() => { persistConfigField('menuItems', menuItems); }, [menuItems, isLoadingDB, currentUser?.role]);
+            useEffect(() => { persistConfigField('tables', tables); }, [tables, isLoadingDB, currentUser?.role]);
+            useEffect(() => { persistConfigField('categories', categories); }, [categories, isLoadingDB, currentUser?.role]);
 
             useEffect(() => {
                 if (settings.appBackground) {
@@ -565,34 +663,13 @@
                     }
                 }
             }, [settings.appBackground]);
-// Fungsi untuk mengirim data pesanan dan menu ke Cloud Firestore
-const syncDataToCloud = async (newOrders, newMenuItems) => {
-    // Pastikan Firebase sudah siap di window
-    if (window.firebaseDb && window.firebaseFns) {
-        try {
-            const { doc, setDoc } = window.firebaseFns;
-            
-            // Menyimpan data ke database Firestore pada koleksi "restaurant" dan dokumen "main_data"
-            await setDoc(doc(window.firebaseDb, "restaurant", "main_data"), {
-                orders: newOrders,
-                menuItems: newMenuItems,
-                updatedAt: new Date().toISOString()
-            }, { merge: true }); // merge: true agar data lain tidak tertimpa total
-            
-            console.log("Data berhasil disinkronkan ke Cloud Firestore!");
-        } catch (e) {
-            console.error("Gagal sinkronisasi ke cloud:", e);
-        }
-    }
-};
             const generateOrderId = () => {
-                const prefix = (settings.orderPrefix || 'ORD').trim().toUpperCase() || 'ORD';
-                // Prefer the familiar four-digit ID; fall back to a timestamp-based ID on collision.
-                for (let attempt = 0; attempt < 30; attempt++) {
-                    const candidate = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
-                    if (!orders.some(order => order.id === candidate)) return candidate;
-                }
-                return `${prefix}-${Date.now().toString().slice(-8)}`;
+                const prefix = (settings.orderPrefix || 'ORD').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16) || 'ORD';
+                const timestamp = Date.now().toString(36).toUpperCase();
+                const randomPart = window.crypto?.randomUUID
+                    ? window.crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
+                    : Math.random().toString(36).slice(2, 10).toUpperCase();
+                return `${prefix}-${timestamp}-${randomPart}`;
             };
 
             const calculateSubtotal = (cart) => cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -603,27 +680,56 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                 return sub + calculateTax(sub) + calculateService(sub);
             };
 
-            const handleLoginSubmit = (e) => {
+            const handleLoginSubmit = async (e) => {
                 e.preventDefault();
-                const found = staffUsers.find(u => u.username === loginForm.username && u.pin === loginForm.pin);
-                if (found) {
-                    setCurrentUser(found);
+                const email = String(loginForm.email || '').trim().toLowerCase();
+                const password = String(loginForm.password || '');
+                if (!email || !password) return;
+
+                try {
+                    const api = firebaseApiRef.current || await window.firebaseApiReady;
+                    const credentials = await api.signInStaff(email, password);
+                    const profile = await api.getStaffProfile(credentials.user.uid);
+                    if (!profile) {
+                        await api.signOut();
+                        const error = new Error('Profil staff tidak ditemukan.');
+                        error.code = 'auth/staff-profile-not-found';
+                        throw error;
+                    }
+                    setCurrentUser({ ...profile, id: credentials.user.uid, uid: credentials.user.uid, email: profile.email || email });
+                    setAuthMessage('');
                     setView('admin');
                     setAdminTab('pos');
-                    setLoginForm({ username: '', pin: '' });
-                } else {
-                    showCustomAlert('Gagal Masuk', 'Username atau PIN 6-digit salah. Silakan coba lagi.');
+                    setLoginForm({ email: '', password: '' });
+                } catch (error) {
+                    setAuthMessage(getFirebaseErrorMessage(error));
                 }
             };
 
-            const handleLogout = () => {
+            const handleLogout = async () => {
                 setCurrentUser(null);
                 setView('landing');
+                setAdminTab('pos');
+                setAuthMessage('');
+                try {
+                    await firebaseApiRef.current?.signOut();
+                } catch (error) {
+                    setFirebaseError(getFirebaseErrorMessage(error));
+                }
             };
 
-            const handleCustomerLogin = (e) => {
+            const handleCustomerLogin = async (e) => {
                 e.preventDefault();
-                if (customerTable.trim() || customerOrderType === 'takeaway') setView('customer');
+                if (!(customerTable.trim() || customerOrderType === 'takeaway')) return;
+                try {
+                    if (firebaseUser && !firebaseUser.isAnonymous) {
+                        await firebaseApiRef.current?.signOut();
+                        await firebaseApiRef.current?.ensureAnonymousSession();
+                    }
+                    setView('customer');
+                } catch (error) {
+                    showCustomAlert('Sesi Pelanggan Gagal', getFirebaseErrorMessage(error));
+                }
             };
 
             const addToCustomerCart = (item) => {
@@ -644,37 +750,47 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                 }).filter(item => item.quantity > 0));
             };
 
-            const handleCustomerCheckout = () => {
+            const handleCustomerCheckout = async () => {
                 if (!customerName.trim()) {
                     showCustomAlert('Nama Diperlukan', 'Mohon masukkan nama pemesan sebelum mengirim pesanan.');
                     return;
                 }
                 if (!checkoutData.paymentMethod || customerCart.length === 0) return;
-                
+                if (!firebaseApiRef.current || !firebaseUser?.isAnonymous) {
+                    showCustomAlert('Sesi Pelanggan Belum Siap', 'Muat ulang halaman atau mulai kembali sesi pelanggan sebelum mengirim pesanan.');
+                    return;
+                }
+
+                const subtotal = calculateSubtotal(customerCart);
                 const newOrder = {
                     id: generateOrderId(),
                     customerName: customerName.trim(),
                     table: customerOrderType === 'takeaway' ? 'Takeaway' : customerTable,
                     orderType: customerOrderType,
                     items: [...customerCart],
-                    subtotal: calculateSubtotal(customerCart),
-                    tax: calculateTax(calculateSubtotal(customerCart)),
-                    service: calculateService(calculateSubtotal(customerCart)),
+                    subtotal,
+                    tax: calculateTax(subtotal),
+                    service: calculateService(subtotal),
                     total: calculateTotal(customerCart),
                     paymentMethod: checkoutData.paymentMethod,
                     notes: checkoutData.notes,
-                    status: 'unverified', 
+                    status: 'unverified',
                     time: new Date().toISOString(),
                     source: 'QR',
                     cashGiven: 0,
                     changeAmount: 0
                 };
-                
-                setOrders(prev => [newOrder, ...prev]);
-                setActiveOrder(newOrder);
-                setReceiptOrder(newOrder); 
-                setCustomerCart([]);
-                setShowCart(false);
+
+                try {
+                    const savedOrder = await firebaseApiRef.current.createOrder(newOrder);
+                    setOrders(prev => [savedOrder, ...prev.filter(order => order.id !== savedOrder.id)]);
+                    setActiveOrder(savedOrder);
+                    setReceiptOrder(savedOrder);
+                    setCustomerCart([]);
+                    setShowCart(false);
+                } catch (error) {
+                    showCustomAlert('Pesanan Gagal Dikirim', getFirebaseErrorMessage(error));
+                }
             };
 
             const addToPosCart = (item) => {
@@ -695,8 +811,12 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                 }).filter(item => item.quantity > 0));
             };
 
-            const handlePosCheckout = () => {
+            const handlePosCheckout = async () => {
                 if (!posPaymentMethod || posCart.length === 0) return;
+                if (!firebaseApiRef.current || !firebaseUser || firebaseUser.isAnonymous) {
+                    showCustomAlert('Kasir Belum Masuk', 'Masuk menggunakan akun Firebase Auth kasir terlebih dahulu.');
+                    return;
+                }
                 const totalAmt = calculateTotal(posCart);
                 const selectedPm = paymentMethods.find(p => p.id === posPaymentMethod);
                 const isCash = selectedPm?.type === 'cash';
@@ -713,15 +833,16 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                     changeNum = cashGivenNum - totalAmt;
                 }
 
+                const subtotal = calculateSubtotal(posCart);
                 const newOrder = {
                     id: generateOrderId(),
                     customerName: posCustomerName.trim() || 'Kasir / Walk-in',
                     table: posTableNo || 'Takeaway',
                     orderType: posOrderType,
                     items: [...posCart],
-                    subtotal: calculateSubtotal(posCart),
-                    tax: calculateTax(calculateSubtotal(posCart)),
-                    service: calculateService(calculateSubtotal(posCart)),
+                    subtotal,
+                    tax: calculateTax(subtotal),
+                    service: calculateService(subtotal),
                     total: totalAmt,
                     paymentMethod: posPaymentMethod,
                     notes: '',
@@ -731,18 +852,28 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                     cashGiven: isCash ? cashGivenNum : 0,
                     changeAmount: isCash ? changeNum : 0
                 };
-                
-                setOrders(prev => [newOrder, ...prev]);
-                setPosCart([]);
-                setPosTableNo('');
-                setPosCustomerName('');
-                setPosPaymentMethod('');
-                setPosCashGiven('');
-                setReceiptOrder(newOrder);
+
+                try {
+                    const savedOrder = await firebaseApiRef.current.createOrder(newOrder);
+                    setOrders(prev => [savedOrder, ...prev.filter(order => order.id !== savedOrder.id)]);
+                    setPosCart([]);
+                    setPosTableNo('');
+                    setPosCustomerName('');
+                    setPosPaymentMethod('');
+                    setPosCashGiven('');
+                    setReceiptOrder(savedOrder);
+                } catch (error) {
+                    showCustomAlert('Transaksi Gagal Disimpan', getFirebaseErrorMessage(error));
+                }
             };
             
-            const updateOrderStatus = (orderId, newStatus) => {
-                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+            const updateOrderStatus = async (orderId, newStatus) => {
+                try {
+                    await firebaseApiRef.current.updateOrderStatus(orderId, newStatus);
+                    setOrders(prev => prev.map(order => order.id === orderId ? { ...order, status: newStatus } : order));
+                } catch (error) {
+                    showCustomAlert('Status Gagal Diperbarui', getFirebaseErrorMessage(error));
+                }
             };
 
             const saveMenu = (e) => {
@@ -825,48 +956,77 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                 reader.readAsArrayBuffer(file);
             };
 
-            const saveStaff = (e) => {
+            const saveStaff = async (e) => {
                 e.preventDefault();
                 const username = String(staffForm.username || '').trim();
-                const pin = String(staffForm.pin || '');
-                if (!username) {
-                    showCustomAlert('Data Tidak Valid', 'Username wajib diisi.');
+                const email = String(staffForm.email || '').trim().toLowerCase();
+                const name = String(staffForm.name || '').trim();
+                const password = String(staffForm.password || '');
+                if (!username || !name || !email) {
+                    showCustomAlert('Data Tidak Valid', 'Nama, username, dan email wajib diisi.');
                     return;
                 }
-                if (!/^\d{6}$/.test(pin)) {
-                    showCustomAlert('PIN Tidak Valid', 'PIN harus terdiri dari tepat 6 angka.');
-                    return;
-                }
-                if (staffUsers.some(s => String(s.username || '').toLowerCase() === username.toLowerCase() && s.id !== editingStaff?.id)) {
+                if (staffUsers.some(staff => String(staff.username || '').toLowerCase() === username.toLowerCase() && staff.id !== editingStaff?.id)) {
                     showCustomAlert('Username Sudah Digunakan', 'Gunakan username yang berbeda untuk setiap akun staff.');
                     return;
                 }
-                const normalizedStaffForm = { ...staffForm, username, pin };
-                if (editingStaff) {
-                    setStaffUsers(staffUsers.map(s => s.id === editingStaff.id ? { ...normalizedStaffForm, id: s.id } : s));
-                } else {
-                    setStaffUsers([...staffUsers, { ...normalizedStaffForm, id: Date.now() }]);
+                if (!editingStaff && password.length < 8) {
+                    showCustomAlert('Kata Sandi Tidak Valid', 'Kata sandi akun staff harus berisi minimal 8 karakter.');
+                    return;
                 }
-                setShowStaffModal(false);
+
+                try {
+                    const api = firebaseApiRef.current;
+                    if (!api) throw new Error('Firebase belum siap. Coba kembali setelah koneksi tersambung.');
+                    if (editingStaff) {
+                        await api.updateStaff(editingStaff.uid || editingStaff.id, { username, name, role: staffForm.role });
+                    } else {
+                        await api.createStaff({ email, password, username, name, role: staffForm.role });
+                    }
+                    setShowStaffModal(false);
+                    setStaffForm({ username: '', email: '', password: '', name: '', role: 'cashier' });
+                } catch (error) {
+                    showCustomAlert('Akun Staff Gagal Disimpan', getFirebaseErrorMessage(error));
+                }
             };
 
             const deleteStaff = (id) => {
-                if (staffUsers.length <= 1) {
-                    showCustomAlert('Peringatan', 'Restoran harus memiliki setidaknya 1 akun staff.');
+                const staff = staffUsers.find(user => user.id === id);
+                if (!staff || staff.role === 'admin') {
+                    showCustomAlert('Akses Dilindungi', 'Profil administrator tidak dapat dihapus dari panel ini.');
                     return;
                 }
-                showCustomAlert('Hapus Staff', 'Apakah Anda yakin ingin menghapus akun staff ini?', () => {
-                    setStaffUsers(staffUsers.filter(s => s.id !== id));
+                showCustomAlert('Hapus Staff', 'Hapus akses staff ini? Akun Firebase tetap ada, tetapi tanpa profil staff akun tidak dapat membuka data restoran.', async () => {
+                    try {
+                        await firebaseApiRef.current.deleteStaff(staff.uid || staff.id);
+                    } catch (error) {
+                        showCustomAlert('Staff Gagal Dihapus', getFirebaseErrorMessage(error));
+                    }
                 });
+            };
+
+            const resetStaffPassword = async (staff) => {
+                try {
+                    await firebaseApiRef.current.sendStaffPasswordReset(staff.email);
+                    showCustomAlert('Email Reset Terkirim', `Tautan reset kata sandi dikirim ke ${staff.email}.`);
+                } catch (error) {
+                    showCustomAlert('Reset Kata Sandi Gagal', getFirebaseErrorMessage(error));
+                }
             };
 
             const openStaffModal = (staff = null) => {
                 if (staff) {
                     setEditingStaff(staff);
-                    setStaffForm(staff);
+                    setStaffForm({
+                        username: staff.username || '',
+                        email: staff.email || '',
+                        password: '',
+                        name: staff.name || '',
+                        role: staff.role || 'cashier'
+                    });
                 } else {
                     setEditingStaff(null);
-                    setStaffForm({ username: '', pin: '', name: '', role: 'cashier' });
+                    setStaffForm({ username: '', email: '', password: '', name: '', role: 'cashier' });
                 }
                 setShowStaffModal(true);
             };
@@ -1287,7 +1447,7 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
             };
 
             const handleBackup = () => {
-                const data = { settings, paymentMethods, menuItems, orders, tables, staffUsers, categories };
+                const data = { settings, paymentMethods, menuItems, orders, tables, categories };
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -1303,13 +1463,13 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
-                reader.onload = (event) => {
+                reader.onload = async (event) => {
                     try {
                         const data = JSON.parse(event.target.result);
                         if (!data || typeof data !== 'object' || Array.isArray(data)) {
                             throw new Error('Struktur backup tidak valid');
                         }
-                        const arrayKeys = ['paymentMethods', 'menuItems', 'orders', 'tables', 'staffUsers', 'categories'];
+                        const arrayKeys = ['paymentMethods', 'menuItems', 'orders', 'tables', 'categories'];
                         for (const key of arrayKeys) {
                             if (data[key] !== undefined && !Array.isArray(data[key])) {
                                 throw new Error(`Bagian ${key} harus berupa array`);
@@ -1318,19 +1478,32 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                         if (data.settings !== undefined && (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings))) {
                             throw new Error('Bagian settings tidak valid');
                         }
-                        // Apply only after all supplied sections pass validation.
-                        if (data.settings) setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
-                        if (data.paymentMethods) setPaymentMethods(data.paymentMethods);
-                        if (data.menuItems) setMenuItems(data.menuItems);
-                        if (data.orders) setOrders(data.orders);
-                        if (data.tables) setTables(data.tables);
-                        if (data.staffUsers) setStaffUsers(data.staffUsers);
-                        if (data.categories) setCategories(data.categories);
-                        showCustomAlert('Restore Berhasil', 'Data sistem berhasil dipulihkan dari file backup.');
+
+                        const api = firebaseApiRef.current;
+                        if (!api || currentUser?.role !== 'admin' || !firebaseUser) {
+                            throw new Error('Restore hanya tersedia untuk administrator yang sudah masuk.');
+                        }
+
+                        const configUpdates = {};
+                        if (data.settings) configUpdates.settings = { ...DEFAULT_SETTINGS, ...data.settings };
+                        if (data.paymentMethods) configUpdates.paymentMethods = data.paymentMethods;
+                        if (data.menuItems) configUpdates.menuItems = data.menuItems;
+                        if (data.tables) configUpdates.tables = data.tables;
+                        if (data.categories) configUpdates.categories = data.categories;
+
+                        if (data.orders?.length) await api.restoreOrders(data.orders, firebaseUser.uid);
+                        if (Object.keys(configUpdates).length) await api.saveRestaurantConfig(configUpdates);
+                        if (configUpdates.settings) setSettings(configUpdates.settings);
+                        if (configUpdates.paymentMethods) setPaymentMethods(configUpdates.paymentMethods);
+                        if (configUpdates.menuItems) setMenuItems(configUpdates.menuItems);
+                        if (configUpdates.tables) setTables(configUpdates.tables);
+                        if (configUpdates.categories) setCategories(configUpdates.categories);
+                        cloudConfigRef.current = { ...cloudConfigRef.current, ...configUpdates };
+                        showCustomAlert('Restore Berhasil', 'Pengaturan dan pesanan berhasil dipulihkan ke Firebase. Akun staff tidak disertakan dalam backup.');
                     } catch (error) {
-                        showCustomAlert('Restore Gagal', 'Format file backup tidak valid atau rusak.');
+                        showCustomAlert('Restore Gagal', getFirebaseErrorMessage(error));
                     }
-                    e.target.value = ''; 
+                    e.target.value = '';
                 };
                 reader.readAsText(file);
             };
@@ -1354,18 +1527,23 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                 return (
                     <div className="min-h-screen bg-zinc-900 flex flex-col items-center justify-center p-6 text-white font-sans">
                         <div className="spinner mb-4"></div>
-                        <h2 className="text-lg font-bold">Memuat Database Restoran...</h2>
-                        <p className="text-xs text-zinc-400 mt-1">Menyiapkan penyimpanan lokal terenkripsi.</p>
+                        <h2 className="text-lg font-bold">Menghubungkan ke Firebase...</h2>
+                        <p className="text-xs text-zinc-400 mt-1">Memuat pengaturan restoran dan status pesanan secara real time.</p>
                     </div>
                 );
             }
 
             return (
                 <div className="min-h-screen text-xs sm:text-sm">
+                    {firebaseError && (
+                        <div role="alert" className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-semibold py-2.5 px-4 text-center">
+                            {firebaseError}
+                        </div>
+                    )}
                     {isOffline && (
                         <div className="bg-brand-700 text-white text-xs font-bold text-center py-2 px-3 w-full shadow-md z-[100] relative flex items-center justify-center space-x-1.5">
                             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3" /></svg>
-                            <span className="truncate">Mode Luring Aktif. Data tersimpan di Database Browser.</span>
+                            <span className="truncate">Koneksi terputus. Perubahan Firestore akan disinkronkan saat online.</span>
                         </div>
                     )}
 
@@ -1495,12 +1673,12 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                     </button>
                                 </div>
-                                <p className="text-xs text-zinc-500 mb-3">Masukkan ID Pesanan (contoh: ORD-1234) untuk memantau status secara langsung.</p>
+                                <p className="text-xs text-zinc-500 mb-3">Masukkan ID dari struk untuk memantau status pesanan secara langsung.</p>
                                 <div className="space-y-3">
                                     <div className="flex gap-2">
                                         <input 
                                             type="text" 
-                                            placeholder="ORD-XXXX" 
+                                            placeholder="ID dari struk"
                                             value={checkOrderIdInput} 
                                             onChange={(e) => setCheckOrderIdInput(e.target.value)} 
                                             className="flex-1 px-3 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs sm:text-sm font-mono font-bold uppercase outline-none focus:border-brand-500" 
@@ -1604,21 +1782,25 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                                     <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                 </div>
                                 <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 mb-1.5 text-center">Login Staff</h2>
-                                <p className="text-[11px] sm:text-xs text-zinc-500 text-center mb-5">Masukkan username dan PIN 6-digit kasir/admin.</p>
+                                <p className="text-[11px] sm:text-xs text-zinc-500 text-center mb-5">Masuk menggunakan email dan kata sandi Firebase Auth.</p>
                                 
                                 <form onSubmit={handleLoginSubmit} className="space-y-3.5">
                                     <div>
-                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Username</label>
-                                        <input type="text" required placeholder="Contoh: admin atau kasir1" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-xs sm:text-sm focus:outline-none focus:border-brand-500" />
+                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Email</label>
+                                        <input type="email" autoComplete="username" required placeholder="nama@restoran.id" value={loginForm.email} onChange={(e) => setLoginForm({...loginForm, email: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-xs sm:text-sm focus:outline-none focus:border-brand-500" />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">PIN (6 digit)</label>
-                                        <input type="password" maxLength="6" required placeholder="••••••" value={loginForm.pin} onChange={(e) => setLoginForm({...loginForm, pin: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-center text-xs sm:text-sm tracking-widest focus:outline-none focus:border-brand-500" />
+                                        <label className="text-[11px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Kata Sandi</label>
+                                        <input type="password" autoComplete="current-password" required placeholder="Masukkan kata sandi" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} className="w-full px-3.5 py-2.5 sm:py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 font-medium text-xs sm:text-sm focus:outline-none focus:border-brand-500" />
                                     </div>
                                     <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-brand-600/30 text-xs sm:text-sm mt-1">
                                         Masuk Dashboard
                                     </button>
                                 </form>
+                                {authMessage && <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{authMessage}</p>}
+                                <p className="mt-3 rounded-xl bg-zinc-50 px-3 py-2.5 text-[10px] leading-relaxed text-zinc-500">
+                                    Admin pertama dibuat di Firebase Authentication, lalu tambahkan profil Firestore di <span className="font-mono">restaurants/main/staff/{'{UID}'}</span> dengan role <span className="font-mono">admin</span>.
+                                </p>
 
                                 <button onClick={() => setView('landing')} className="w-full mt-3.5 bg-zinc-100 border border-zinc-200 text-zinc-600 font-bold py-2.5 rounded-xl hover:bg-zinc-200 text-xs sm:text-sm transition-all">
                                     Kembali
@@ -2325,7 +2507,7 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                                             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-zinc-200">
                                                 <div>
                                                     <h3 className="font-bold text-sm text-zinc-800">Manajemen Akun Staff & Kasir</h3>
-                                                    <p className="text-xs text-zinc-500">Atur akses login PIN untuk kasir dan administrator.</p>
+                                                            <p className="text-xs text-zinc-500">Kelola akun Firebase Auth dan role akses kasir atau administrator.</p>
                                                 </div>
                                                 <button onClick={() => openStaffModal()} className="bg-brand-600 hover:bg-brand-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-md text-xs transition-all flex items-center space-x-1.5">
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -2339,44 +2521,27 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                                                         <tr className="bg-zinc-50 border-b border-zinc-200 text-[11px] font-bold text-zinc-500 uppercase">
                                                             <th className="p-3.5">Nama Staff</th>
                                                             <th className="p-3.5">Username</th>
-                                                            <th className="p-3.5">PIN (6-Digit)</th>
+                                                            <th className="p-3.5">Email</th>
                                                             <th className="p-3.5">Role</th>
                                                             <th className="p-3.5 text-center">Aksi</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-zinc-100">
                                                         {staffUsers.map(staff => {
-                                                            const isPinVisible = visibleStaffPins[staff.id];
                                                             return (
                                                                 <tr key={staff.id} className="hover:bg-zinc-50 transition-colors">
                                                                     <td className="p-3.5 font-bold text-zinc-900">{staff.name}</td>
                                                                     <td className="p-3.5 font-mono text-zinc-600">{staff.username}</td>
-                                                                    <td className="p-3.5 font-mono">
-                                                                        <div className="flex items-center space-x-2">
-                                                                            <span className="bg-zinc-100 px-2.5 py-1 rounded-lg text-zinc-800 font-bold tracking-wider">
-                                                                                {isPinVisible ? staff.pin : '••••••'}
-                                                                            </span>
-                                                                            <button 
-                                                                                onClick={() => setVisibleStaffPins(prev => ({ ...prev, [staff.id]: !prev[staff.id] }))}
-                                                                                className="text-zinc-400 hover:text-zinc-600 p-1"
-                                                                                title={isPinVisible ? 'Sembunyikan PIN' : 'Lihat PIN'}
-                                                                            >
-                                                                                {isPinVisible ? (
-                                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
-                                                                                ) : (
-                                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                                                                                )}
-                                                                            </button>
-                                                                        </div>
-                                                                    </td>
+                                                                    <td className="p-3.5 font-mono text-zinc-600">{staff.email}</td>
                                                                     <td className="p-3.5">
                                                                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${staff.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                                                                             {staff.role}
                                                                         </span>
                                                                     </td>
-                                                                    <td className="p-3.5 text-center space-x-2">
-                                                                        <button onClick={() => openStaffModal(staff)} className="px-3 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-bold">Edit</button>
-                                                                        <button onClick={() => deleteStaff(staff.id)} className="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-bold">Hapus</button>
+                                                                    <td className="p-3.5 text-center whitespace-nowrap space-x-1">
+                                                                        <button onClick={() => resetStaffPassword(staff)} className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold">Reset sandi</button>
+                                                                        <button onClick={() => openStaffModal(staff)} className="px-2.5 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-bold">Edit</button>
+                                                                        {staff.role === 'cashier' && <button onClick={() => deleteStaff(staff.id)} className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-bold">Hapus</button>}
                                                                     </td>
                                                                 </tr>
                                                             );
@@ -2573,9 +2738,17 @@ const syncDataToCloud = async (newOrders, newMenuItems) => {
                                         <input type="text" required value={staffForm.username} onChange={(e) => setStaffForm({...staffForm, username: e.target.value})} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold" />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-bold text-zinc-600 block mb-1">PIN (6 digit)</label>
-                                        <input type="password" maxLength="6" required value={staffForm.pin} onChange={(e) => setStaffForm({...staffForm, pin: e.target.value})} placeholder="••••••" className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold tracking-widest text-center" />
+                                        <label className="text-xs font-bold text-zinc-600 block mb-1">Email Login</label>
+                                        <input type="email" required disabled={Boolean(editingStaff)} autoComplete="email" value={staffForm.email} onChange={(e) => setStaffForm({...staffForm, email: e.target.value})} placeholder="nama@restoran.id" className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold disabled:opacity-60" />
                                     </div>
+                                    {!editingStaff ? (
+                                        <div>
+                                            <label className="text-xs font-bold text-zinc-600 block mb-1">Kata Sandi (minimal 8 karakter)</label>
+                                            <input type="password" minLength="8" required autoComplete="new-password" value={staffForm.password} onChange={(e) => setStaffForm({...staffForm, password: e.target.value})} placeholder="Buat kata sandi" className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold" />
+                                        </div>
+                                    ) : (
+                                        <p className="text-[10px] leading-relaxed text-zinc-500">Kredensial disimpan oleh Firebase Auth. Kirim email reset dari daftar staff untuk mengganti kata sandi.</p>
+                                    )}
                                     <div>
                                         <label className="text-xs font-bold text-zinc-600 block mb-1">Role</label>
                                         <select value={staffForm.role} onChange={(e) => setStaffForm({...staffForm, role: e.target.value})} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold bg-white">

@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function staffPath() {
+      return /databases/$(database)/documents/restaurants/main/staff/$(request.auth.uid);
+    }
+
+    function isStaff() {
+      return signedIn()
+        && exists(staffPath())
+        && get(staffPath()).data.role in ['admin', 'cashier'];
+    }
+
+    function isAdmin() {
+      return isStaff() && get(staffPath()).data.role == 'admin';
+    }
+
+    function isAnonymousCustomer() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function validOrder() {
+      return request.resource.data.keys().hasAll([
+          'id', 'ownerUid', 'customerName', 'table', 'orderType', 'items',
+          'subtotal', 'tax', 'service', 'total', 'paymentMethod', 'notes',
+          'status', 'time', 'source', 'cashGiven', 'changeAmount'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'id', 'ownerUid', 'customerName', 'table', 'orderType', 'items',
+          'subtotal', 'tax', 'service', 'total', 'paymentMethod', 'notes',
+          'status', 'time', 'source', 'cashGiven', 'changeAmount', 'updatedAt', 'restoredAt'
+        ])
+        && request.resource.data.id is string
+        && request.resource.data.ownerUid is string
+        && request.resource.data.customerName is string
+        && request.resource.data.table is string
+        && request.resource.data.orderType in ['dine-in', 'takeaway']
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 50
+        && request.resource.data.subtotal is number
+        && request.resource.data.subtotal >= 0
+        && request.resource.data.tax is number
+        && request.resource.data.tax >= 0
+        && request.resource.data.service is number
+        && request.resource.data.service >= 0
+        && request.resource.data.total is number
+        && request.resource.data.total >= 0
+        && request.resource.data.paymentMethod is string
+        && request.resource.data.notes is string
+        && request.resource.data.status in ['unverified', 'pending', 'processing', 'completed', 'cancelled']
+        && request.resource.data.time is string
+        && request.resource.data.source in ['QR', 'KASIR', 'IMPORT']
+        && request.resource.data.cashGiven is number
+        && request.resource.data.cashGiven >= 0
+        && request.resource.data.changeAmount is number
+        && request.resource.data.changeAmount >= 0;
+    }
+
+    match /restaurants/{restaurantId} {
+      allow get: if restaurantId == 'main' && signedIn();
+      allow list: if false;
+      allow create, update: if restaurantId == 'main'
+        && isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'settings', 'paymentMethods', 'menuItems', 'tables', 'categories', 'updatedAt'
+        ]);
+      allow delete: if false;
+
+      match /staff/{staffUid} {
+        allow get: if restaurantId == 'main'
+          && signedIn()
+          && (request.auth.uid == staffUid || isAdmin());
+        allow list: if restaurantId == 'main' && isAdmin();
+        allow create: if restaurantId == 'main'
+          && isAdmin()
+          && request.resource.data.uid == staffUid
+          && request.resource.data.email is string
+          && request.resource.data.username is string
+          && request.resource.data.name is string
+          && request.resource.data.role in ['admin', 'cashier']
+          && request.resource.data.keys().hasOnly([
+            'uid', 'email', 'username', 'name', 'role', 'createdAt'
+          ]);
+        allow update: if restaurantId == 'main'
+          && isAdmin()
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.username is string
+          && request.resource.data.name is string
+          && request.resource.data.role in ['admin', 'cashier']
+          && request.resource.data.keys().hasOnly([
+            'uid', 'email', 'username', 'name', 'role', 'createdAt'
+          ]);
+        allow delete: if restaurantId == 'main'
+          && isAdmin()
+          && staffUid != request.auth.uid
+          && resource.data.role == 'cashier';
+      }
+
+      match /orders/{orderId} {
+        allow get: if restaurantId == 'main'
+          && signedIn()
+          && (isStaff() || resource.data.ownerUid == request.auth.uid);
+        allow list: if restaurantId == 'main'
+          && (isStaff()
+            || (signedIn()
+              && request.query.limit <= 100
+              && resource.data.ownerUid == request.auth.uid));
+        allow create: if restaurantId == 'main'
+          && validOrder()
+          && request.resource.data.id == orderId
+          && request.resource.data.ownerUid == request.auth.uid
+          && ((isAnonymousCustomer()
+              && request.resource.data.source == 'QR'
+              && request.resource.data.status == 'unverified')
+            || (isStaff()
+              && request.resource.data.source == 'KASIR'
+              && request.resource.data.status == 'completed')
+            || (isAdmin() && request.resource.data.source == 'IMPORT'));
+        allow update: if restaurantId == 'main'
+          && isStaff()
+          && ((isAdmin()
+              && validOrder()
+              && request.resource.data.id == orderId
+              && request.resource.data.ownerUid == request.auth.uid)
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+              && request.resource.data.status in ['unverified', 'pending', 'processing', 'completed', 'cancelled']));
+        allow delete: if restaurantId == 'main' && isAdmin();
+      }
+    }
+  }
+}
